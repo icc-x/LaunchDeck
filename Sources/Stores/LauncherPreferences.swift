@@ -1,6 +1,38 @@
 import Foundation
+import SwiftUI
+
+enum LauncherAppearanceMode: String, CaseIterable, Codable, Equatable, Identifiable, Sendable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .system:
+            nil
+        case .light:
+            .light
+        case .dark:
+            .dark
+        }
+    }
+
+    var localizedTitle: String {
+        switch self {
+        case .system:
+            LaunchDeckStrings.appearanceFollowSystem
+        case .light:
+            LaunchDeckStrings.appearanceLight
+        case .dark:
+            LaunchDeckStrings.appearanceDark
+        }
+    }
+}
 
 struct LauncherPreferencesSnapshot: Codable, Equatable, Sendable {
+    var appearanceMode: LauncherAppearanceMode
     var focusSearchOnLaunch: Bool
     var enableWheelPaging: Bool
     var restoreLastSession: Bool
@@ -9,6 +41,7 @@ struct LauncherPreferencesSnapshot: Codable, Equatable, Sendable {
     var folderPageSize: Int
 
     static let defaults = LauncherPreferencesSnapshot(
+        appearanceMode: .system,
         focusSearchOnLaunch: true,
         enableWheelPaging: true,
         restoreLastSession: true,
@@ -21,6 +54,7 @@ struct LauncherPreferencesSnapshot: Codable, Equatable, Sendable {
 @MainActor
 final class LauncherPreferences: ObservableObject {
     private enum Key {
+        static let appearanceMode = "preferences.appearanceMode"
         static let focusSearchOnLaunch = "preferences.focusSearchOnLaunch"
         static let enableWheelPaging = "preferences.enableWheelPaging"
         static let restoreLastSession = "preferences.restoreLastSession"
@@ -31,6 +65,9 @@ final class LauncherPreferences: ObservableObject {
 
     private let userDefaults: UserDefaults
 
+    @Published var appearanceMode: LauncherAppearanceMode {
+        didSet { persist(key: Key.appearanceMode, value: appearanceMode.rawValue) }
+    }
     @Published var focusSearchOnLaunch: Bool {
         didSet { persist(key: Key.focusSearchOnLaunch, value: focusSearchOnLaunch) }
     }
@@ -66,6 +103,7 @@ final class LauncherPreferences: ObservableObject {
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
+        appearanceMode = LauncherAppearanceMode(rawValue: userDefaults.string(forKey: Key.appearanceMode) ?? "") ?? .system
         focusSearchOnLaunch = userDefaults.object(forKey: Key.focusSearchOnLaunch) as? Bool ?? true
         enableWheelPaging = userDefaults.object(forKey: Key.enableWheelPaging) as? Bool ?? true
         restoreLastSession = userDefaults.object(forKey: Key.restoreLastSession) as? Bool ?? true
@@ -76,6 +114,7 @@ final class LauncherPreferences: ObservableObject {
 
     var snapshot: LauncherPreferencesSnapshot {
         LauncherPreferencesSnapshot(
+            appearanceMode: appearanceMode,
             focusSearchOnLaunch: focusSearchOnLaunch,
             enableWheelPaging: enableWheelPaging,
             restoreLastSession: restoreLastSession,
@@ -90,6 +129,7 @@ final class LauncherPreferences: ObservableObject {
     }
 
     func reset() {
+        appearanceMode = LauncherPreferencesSnapshot.defaults.appearanceMode
         focusSearchOnLaunch = LauncherPreferencesSnapshot.defaults.focusSearchOnLaunch
         enableWheelPaging = LauncherPreferencesSnapshot.defaults.enableWheelPaging
         restoreLastSession = LauncherPreferencesSnapshot.defaults.restoreLastSession

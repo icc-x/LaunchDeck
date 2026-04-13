@@ -25,6 +25,7 @@
 "settings.section.session" = "Recovery & Storage";
 "settings.section.diagnostics" = "Diagnostics";
 "settings.section.appearance" = "Display";
+"settings.appearance_mode" = "Appearance";
 "settings.focus_search_on_launch" = "Focus search field on launch";
 "settings.enable_wheel_paging" = "Enable wheel paging";
 "settings.restore_last_session" = "Restore last session";
@@ -43,6 +44,9 @@
 "command.export_diagnostics" = "Export Diagnostics…";
 "accessibility.reload_hint" = "Rescan local apps and refresh the layout";
 "accessibility.settings_hint" = "Open the settings window";
+"appearance.follow_system" = "System";
+"appearance.light" = "Light";
+"appearance.dark" = "Dark";
 "status.apps_count" = "%ld apps available. Drag to group or reorder.";
 "folder.app_count" = "%ld apps";
 "footer.page_position" = "Page %ld of %ld";

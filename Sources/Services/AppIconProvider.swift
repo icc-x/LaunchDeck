@@ -8,6 +8,18 @@ final class AppIconProvider {
         let path: String
     }
 
+    private struct PreparedIcon {
+        let image: NSImage
+        let cost: Int
+    }
+
+    private enum CachePolicy {
+        static let countLimit = 160
+        static let totalCostLimit = 24 * 1024 * 1024
+        static let bytesPerPixel = 4
+        static let fallbackBackingScaleFactor: CGFloat = 2
+    }
+
     private let cache = NSCache<NSString, NSImage>()
     private var iconLoadedSubjects: [String: PassthroughSubject<Void, Never>] = [:]
     private let iconSize = NSSize(width: 72, height: 72)
@@ -25,7 +37,8 @@ final class AppIconProvider {
     }()
 
     init() {
-        cache.countLimit = 720
+        cache.countLimit = CachePolicy.countLimit
+        cache.totalCostLimit = CachePolicy.totalCostLimit
     }
 
     deinit {
@@ -99,9 +112,10 @@ final class AppIconProvider {
                 continue
             }
 
-            let image = NSWorkspace.shared.icon(forFile: job.path)
-            image.size = iconSize
-            cache.setObject(image, forKey: key)
+            let preparedIcon: PreparedIcon = autoreleasepool {
+                makePreparedIcon(forFileAtPath: job.path)
+            }
+            cache.setObject(preparedIcon.image, forKey: key, cost: preparedIcon.cost)
             if let subject = iconLoadedSubjects.removeValue(forKey: job.id) {
                 subject.send(())
                 subject.send(completion: .finished)
@@ -138,5 +152,53 @@ final class AppIconProvider {
         let created = PassthroughSubject<Void, Never>()
         iconLoadedSubjects[appID] = created
         return created
+    }
+
+    private func makePreparedIcon(forFileAtPath path: String) -> PreparedIcon {
+        let sourceImage = NSWorkspace.shared.icon(forFile: path)
+        let backingScaleFactor = max(Self.maximumBackingScaleFactor(), CachePolicy.fallbackBackingScaleFactor)
+        let pixelWidth = max(1, Int((iconSize.width * backingScaleFactor).rounded(.up)))
+        let pixelHeight = max(1, Int((iconSize.height * backingScaleFactor).rounded(.up)))
+        let cost = pixelWidth * pixelHeight * CachePolicy.bytesPerPixel
+
+        guard let representation = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixelWidth,
+            pixelsHigh: pixelHeight,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            sourceImage.size = iconSize
+            return PreparedIcon(image: sourceImage, cost: cost)
+        }
+
+        representation.size = iconSize
+
+        NSGraphicsContext.saveGraphicsState()
+        if let context = NSGraphicsContext(bitmapImageRep: representation) {
+            NSGraphicsContext.current = context
+            context.imageInterpolation = .high
+            sourceImage.draw(
+                in: NSRect(origin: .zero, size: iconSize),
+                from: NSRect(origin: .zero, size: sourceImage.size),
+                operation: .copy,
+                fraction: 1
+            )
+            context.flushGraphics()
+        }
+        NSGraphicsContext.restoreGraphicsState()
+
+        let rasterizedImage = NSImage(size: iconSize)
+        rasterizedImage.addRepresentation(representation)
+        return PreparedIcon(image: rasterizedImage, cost: cost)
+    }
+
+    nonisolated private static func maximumBackingScaleFactor() -> CGFloat {
+        NSScreen.screens.map(\.backingScaleFactor).max() ?? CachePolicy.fallbackBackingScaleFactor
     }
 }

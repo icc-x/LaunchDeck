@@ -6,7 +6,7 @@ import os
 final class LauncherStore: ObservableObject {
     @Published private(set) var allApps: [AppItem] = []
     @Published private(set) var rootEntries: [LauncherEntry] = []
-    @Published private(set) var pages: [[LauncherEntry]] = []
+    @Published private(set) var pages: [ArraySlice<LauncherEntry>] = []
     @Published var query = "" {
         didSet {
             guard !isManagingQueryManually else { return }
@@ -182,11 +182,11 @@ final class LauncherStore: ObservableObject {
 
         do {
             _ = try await diagnosticsService.export(report: report)
-            statusMessage = LaunchDeckStrings.diagnosticsExported
+            publishActionStatus(LaunchDeckStrings.diagnosticsExported)
         } catch let error as LauncherDiagnosticsError {
             switch error {
             case .cancelled:
-                statusMessage = LaunchDeckStrings.diagnosticsExportCancelled
+                publishActionStatus(LaunchDeckStrings.diagnosticsExportCancelled)
             }
         } catch {
             lastError = LaunchDeckStrings.diagnosticsExportFailed(error.localizedDescription)
@@ -199,7 +199,7 @@ final class LauncherStore: ObservableObject {
         restoredSession = nil
         do {
             try await sessionPersistence.deleteAsync()
-            statusMessage = LaunchDeckStrings.sessionCleared
+            publishActionStatus(LaunchDeckStrings.sessionCleared)
             logger.info("store.session.cleared")
         } catch {
             logger.error("store.session.clear_failed error=\(error.localizedDescription, privacy: .public)")
@@ -218,11 +218,11 @@ final class LauncherStore: ObservableObject {
     }
 
     func notePreferencesReset() {
-        statusMessage = LaunchDeckStrings.preferencesReset
+        publishActionStatus(LaunchDeckStrings.preferencesReset)
     }
 
     func launch(_ app: AppItem) {
-        statusMessage = LaunchDeckStrings.openingApp(app.name)
+        publishStatus(LaunchDeckStrings.openingApp(app.name))
         appLauncher.launch(app) { [weak self] error in
             Task { @MainActor in
                 guard let self else { return }
@@ -230,7 +230,7 @@ final class LauncherStore: ObservableObject {
                     self.lastError = error
                     self.statusMessage = LaunchDeckStrings.openAppFailed(app.name)
                 } else {
-                    self.statusMessage = LaunchDeckStrings.openedApp(app.name)
+                    self.publishActionStatus(LaunchDeckStrings.openedApp(app.name))
                 }
             }
         }
@@ -275,7 +275,7 @@ final class LauncherStore: ObservableObject {
         guard queryKeyword.isEmpty else { return }
         if !isEditing {
             isEditing = true
-            statusMessage = LaunchDeckStrings.editingStatus()
+            publishActionStatus(LaunchDeckStrings.editingStatus())
         }
     }
 
@@ -283,19 +283,19 @@ final class LauncherStore: ObservableObject {
         guard isEditing else { return }
         isEditing = false
         clearDragging()
-        statusMessage = activeFolder.map { LaunchDeckStrings.folderOpened($0.name) } ?? defaultStatusMessage()
+        publishActionStatus(activeFolder.map { LaunchDeckStrings.folderOpened($0.name) } ?? defaultStatusMessage())
     }
 
     func openFolder(_ folder: FolderItem) {
         guard queryKeyword.isEmpty else { return }
         activeFolder = folder
-        statusMessage = LaunchDeckStrings.folderOpened(folder.name)
+        publishActionStatus(LaunchDeckStrings.folderOpened(folder.name))
     }
 
     func closeFolder() {
         activeFolder = nil
         if queryKeyword.isEmpty {
-            statusMessage = defaultStatusMessage()
+            publishActionStatus(defaultStatusMessage())
         }
     }
 
@@ -357,12 +357,12 @@ final class LauncherStore: ObservableObject {
             if let groupedFolder {
                 activeFolder = groupedFolder
                 if targetEntry.folderValue != nil {
-                    statusMessage = LaunchDeckStrings.groupedIntoFolder(draggedName, folderName: groupedFolder.name)
+                    publishActionStatus(LaunchDeckStrings.groupedIntoFolder(draggedName, folderName: groupedFolder.name))
                 } else {
-                    statusMessage = LaunchDeckStrings.createdFolder(groupedFolder.name)
+                    publishActionStatus(LaunchDeckStrings.createdFolder(groupedFolder.name))
                 }
             } else {
-                statusMessage = LaunchDeckStrings.rootReordered()
+                publishActionStatus(LaunchDeckStrings.rootReordered())
             }
             scheduleLayoutPersist()
         }
@@ -401,7 +401,7 @@ final class LauncherStore: ObservableObject {
         if shouldKeepOpened, let renamedFolder {
             activeFolder = renamedFolder
         }
-        statusMessage = LaunchDeckStrings.folderRenamed(renamedFolder?.name ?? trimmed)
+        publishActionStatus(LaunchDeckStrings.folderRenamed(renamedFolder?.name ?? trimmed))
     }
 
     func handleFolderDrop(on targetApp: AppItem, folderID: String) {
@@ -429,7 +429,7 @@ final class LauncherStore: ObservableObject {
             applyFilter()
             if let updatedFolder {
                 activeFolder = updatedFolder
-                statusMessage = LaunchDeckStrings.folderReordered(updatedFolder.name)
+                publishActionStatus(LaunchDeckStrings.folderReordered(updatedFolder.name))
             }
         }
         clearDragging()
@@ -466,7 +466,7 @@ final class LauncherStore: ObservableObject {
             applyFilter()
             if let updatedFolder {
                 activeFolder = updatedFolder
-                statusMessage = LaunchDeckStrings.folderCrossPageMoved(updatedFolder.name)
+                publishActionStatus(LaunchDeckStrings.folderCrossPageMoved(updatedFolder.name))
             }
         }
         clearDragging()
@@ -490,7 +490,7 @@ final class LauncherStore: ObservableObject {
 
         if didChange {
             activeFolder = nil
-            statusMessage = LaunchDeckStrings.folderExtracted(extractedApp?.name ?? LaunchDeckStrings.fallbackAppName)
+            publishActionStatus(LaunchDeckStrings.folderExtracted(extractedApp?.name ?? LaunchDeckStrings.fallbackAppName))
             scheduleLayoutPersist()
             applyFilter()
         }
@@ -556,7 +556,7 @@ final class LauncherStore: ObservableObject {
 
         if didChange {
             scheduleLayoutPersist()
-            statusMessage = LaunchDeckStrings.rootMovedToPageBoundary(direction: direction)
+            publishActionStatus(LaunchDeckStrings.rootMovedToPageBoundary(direction: direction))
         }
         clearDragging()
         applyFilter()
@@ -641,13 +641,13 @@ final class LauncherStore: ObservableObject {
         if queryKeyword.isEmpty, let folderID = restoredSession.activeFolderID {
             activeFolder = layoutEditor().currentFolder(id: folderID)
             if let activeFolder {
-                statusMessage = LaunchDeckStrings.folderOpened(activeFolder.name)
+                publishActionStatus(LaunchDeckStrings.folderOpened(activeFolder.name))
             }
         }
 
         if activeFolder == nil,
            previousQuery != query || previousPage != currentPage || previousActiveFolderID != activeFolder?.id {
-            statusMessage = LaunchDeckStrings.sessionRestored
+            publishActionStatus(LaunchDeckStrings.sessionRestored)
         }
         logger.info("store.session.restore page=\(self.currentPage, privacy: .public)")
     }
@@ -746,6 +746,17 @@ final class LauncherStore: ObservableObject {
         rootEntries.isEmpty ? LaunchDeckStrings.noAppsStatus() : LaunchDeckStrings.appCount(allApps.count)
     }
 
+    private func publishStatus(_ message: String, clearingError: Bool = false) {
+        statusMessage = message
+        if clearingError {
+            lastError = nil
+        }
+    }
+
+    private func publishActionStatus(_ message: String) {
+        publishStatus(message, clearingError: true)
+    }
+
     private func layoutEditor() -> LauncherLayoutEditor {
         LauncherLayoutEditor(entries: rootEntries)
     }
@@ -834,6 +845,7 @@ final class LauncherStore: ObservableObject {
         do {
             try await sessionPersistence.saveAsync(snapshot)
             restoredSession = snapshot
+            lastError = nil
         } catch {
             logger.error("store.session.save_failed error=\(error.localizedDescription, privacy: .public)")
             lastError = LaunchDeckStrings.sessionSaveFailed(error.localizedDescription)

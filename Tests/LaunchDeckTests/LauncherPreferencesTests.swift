@@ -8,6 +8,7 @@ final class LauncherPreferencesTests: XCTestCase {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         let preferences = LauncherPreferences(userDefaults: defaults)
 
+        preferences.appearanceMode = .dark
         preferences.focusSearchOnLaunch = false
         preferences.enableWheelPaging = false
         preferences.restoreLastSession = false
@@ -18,6 +19,7 @@ final class LauncherPreferencesTests: XCTestCase {
         XCTAssertEqual(
             preferences.snapshot,
             LauncherPreferencesSnapshot(
+                appearanceMode: .dark,
                 focusSearchOnLaunch: false,
                 enableWheelPaging: false,
                 restoreLastSession: false,
@@ -43,6 +45,7 @@ final class LauncherPreferencesTests: XCTestCase {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         let preferences = LauncherPreferences(userDefaults: defaults)
 
+        preferences.appearanceMode = .dark
         preferences.focusSearchOnLaunch = false
         preferences.enableWheelPaging = false
         preferences.restoreLastSession = false
@@ -54,5 +57,15 @@ final class LauncherPreferencesTests: XCTestCase {
 
         XCTAssertEqual(preferences.snapshot, .defaults)
         XCTAssertTrue(preferences.isDefaultConfiguration)
+    }
+
+    func testAppearanceModePersistsAcrossInstances() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let preferences = LauncherPreferences(userDefaults: defaults)
+
+        preferences.appearanceMode = .light
+
+        let restored = LauncherPreferences(userDefaults: defaults)
+        XCTAssertEqual(restored.appearanceMode, .light)
     }
 }

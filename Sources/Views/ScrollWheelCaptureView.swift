@@ -46,7 +46,7 @@ final class CaptureView: NSView {
     }
 
     fileprivate func handleScrollEvent(_ event: NSEvent) -> Bool {
-        guard let coordinator, window != nil else { return false }
+        guard let coordinator, let window, event.window === window else { return false }
         let local = convert(event.locationInWindow, from: nil)
         guard bounds.contains(local) else { return false }
         return coordinator.onScroll(event)

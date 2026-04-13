@@ -7,6 +7,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         static let widthHeightRatio: CGFloat = 1.618033988749895
     }
 
+    enum WindowIdentifier {
+        static let settings = NSUserInterfaceItemIdentifier("launchdeck.settings")
+    }
+
     private var suppressRestoreUntil = Date.distantPast
     private var initializedWindows = Set<ObjectIdentifier>()
     private let logger = Logger(subsystem: "com.icc.launchdeck", category: "Lifecycle")
@@ -56,14 +60,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     private func configure(window: NSWindow) {
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.titlebarAppearsTransparent = true
+        if window.identifier == WindowIdentifier.settings {
+            configureSettingsWindow(window)
+        } else {
+            configureMainWindow(window)
+        }
 
         let windowID = ObjectIdentifier(window)
         if initializedWindows.insert(windowID).inserted {
             applyInitialWindowSize(window)
         }
+    }
+
+    @MainActor
+    private func configureMainWindow(_ window: NSWindow) {
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = false
+    }
+
+    @MainActor
+    private func configureSettingsWindow(_ window: NSWindow) {
+        window.isOpaque = true
+        window.backgroundColor = .windowBackgroundColor
+        window.titlebarAppearsTransparent = false
+        window.isMovableByWindowBackground = false
     }
 
     @MainActor

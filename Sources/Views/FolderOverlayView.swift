@@ -29,7 +29,7 @@ struct FolderOverlayView: View {
     @State private var edgeHoverStartedAt = Date.distantPast
     @State private var lastEdgeFlipAt = Date.distantPast
     @State private var lastWheelFlipAt = Date.distantPast
-    @State private var pagedAppsCache: [[AppItem]] = []
+    @State private var pagedAppsCache: [ArraySlice<AppItem>] = []
     @State private var folderBadgeReloadToken = 0
     @State private var folderBadgeSubscription: AnyCancellable?
     @State private var subscribedFolderBadgeKey = ""
@@ -40,8 +40,8 @@ struct FolderOverlayView: View {
         LaunchTheme(colorScheme: colorScheme)
     }
 
-    private var visibleApps: [AppItem] {
-        guard pagedAppsCache.indices.contains(currentPage) else { return [] }
+    private var visibleApps: ArraySlice<AppItem> {
+        guard pagedAppsCache.indices.contains(currentPage) else { return ArraySlice<AppItem>() }
         return pagedAppsCache[currentPage]
     }
 

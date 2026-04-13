@@ -15,6 +15,7 @@ final class LauncherDiagnosticsServiceTests: XCTestCase {
 
         let report = service.makeReport(
             preferences: LauncherPreferencesSnapshot(
+                appearanceMode: .dark,
                 focusSearchOnLaunch: true,
                 enableWheelPaging: true,
                 restoreLastSession: true,

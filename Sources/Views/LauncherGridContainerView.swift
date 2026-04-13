@@ -3,7 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct LauncherGridContainerView: View {
-    let entries: [LauncherEntry]
+    let entries: ArraySlice<LauncherEntry>
     let isSearchMode: Bool
     let isEditing: Bool
     let currentPage: Int

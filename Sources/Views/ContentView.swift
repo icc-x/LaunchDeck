@@ -248,7 +248,7 @@ struct ContentView: View {
     private func prefetchVisibleIcons() {
         var apps: [AppItem] = []
 
-        func appendEntries(_ entries: [LauncherEntry]) {
+        func appendEntries(_ entries: ArraySlice<LauncherEntry>) {
             for entry in entries {
                 switch entry {
                 case let .app(app):

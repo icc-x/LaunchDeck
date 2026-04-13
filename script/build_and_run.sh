@@ -17,6 +17,9 @@ INFO_PLIST="$APP_CONTENTS/Info.plist"
 ICON_NAME="AppIcon"
 ICON_FILE="$ICON_NAME.icns"
 ICON_SOURCE="$ROOT_DIR/Resources/$ICON_FILE"
+DEFAULT_APP_VERSION="$(git -C "$ROOT_DIR" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)"
+APP_VERSION="${APP_VERSION:-${DEFAULT_APP_VERSION:-1.0.0}}"
+APP_BUILD="${APP_BUILD:-$(git -C "$ROOT_DIR" rev-list --count HEAD 2>/dev/null || echo 1)}"
 
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 
@@ -56,6 +59,10 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$APP_NAME</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$APP_VERSION</string>
+  <key>CFBundleVersion</key>
+  <string>$APP_BUILD</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
   <key>NSPrincipalClass</key>

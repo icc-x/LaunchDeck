@@ -5,6 +5,14 @@ import XCTest
 
 @MainActor
 final class LauncherStoreTests: XCTestCase {
+    private final class LaunchErrorBox: @unchecked Sendable {
+        var value: String?
+
+        init(_ value: String? = nil) {
+            self.value = value
+        }
+    }
+
     func testReloadFlushesPendingLayoutChangesBeforeReloadingPersistedLayout() async throws {
         let fileManager = FileManager.default
         let directory = makeTemporaryDirectory(fileManager: fileManager)
@@ -128,6 +136,70 @@ final class LauncherStoreTests: XCTestCase {
 
         XCTAssertEqual(store.query, "term")
         XCTAssertEqual(store.statusMessage, LaunchDeckStrings.sessionRestored)
+    }
+
+    func testSuccessfulLaunchClearsPreviousError() async {
+        let launchError = LaunchErrorBox("launch failed")
+        let safari = app("Safari", path: "/Applications/Safari.app")
+        let preferences = LauncherPreferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let store = LauncherStore(
+            preferences: preferences,
+            catalogClient: LauncherCatalogClient(
+                loadApplications: { [safari] },
+                enrichApplications: { $0 }
+            ),
+            appLauncher: AppLaunchClient { _, completion in
+                completion(launchError.value)
+            },
+            autoReload: false
+        )
+
+        await store.reload()
+        store.launch(safari)
+        try? await Task.sleep(nanoseconds: 20_000_000)
+
+        XCTAssertEqual(store.lastError, "launch failed")
+
+        launchError.value = nil
+        store.launch(safari)
+        try? await Task.sleep(nanoseconds: 20_000_000)
+
+        XCTAssertNil(store.lastError)
+        XCTAssertEqual(store.statusMessage, LaunchDeckStrings.openedApp(safari.name))
+    }
+
+    func testSuccessfulSessionClearClearsPreviousError() async throws {
+        let fileManager = FileManager.default
+        let directory = makeTemporaryDirectory(fileManager: fileManager)
+        defer { try? fileManager.removeItem(at: directory) }
+
+        let launchError = LaunchErrorBox("launch failed")
+        let safari = app("Safari", path: "/Applications/Safari.app")
+        let preferences = LauncherPreferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let sessionPersistence = LauncherSessionPersistence(fileManager: fileManager, baseDirectory: directory)
+        let store = LauncherStore(
+            preferences: preferences,
+            layoutPersistence: LauncherLayoutPersistence(fileManager: fileManager, baseDirectory: directory),
+            sessionPersistence: sessionPersistence,
+            catalogClient: LauncherCatalogClient(
+                loadApplications: { [safari] },
+                enrichApplications: { $0 }
+            ),
+            appLauncher: AppLaunchClient { _, completion in
+                completion(launchError.value)
+            },
+            autoReload: false
+        )
+
+        await store.reload()
+        store.launch(safari)
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        XCTAssertEqual(store.lastError, "launch failed")
+
+        await store.clearRestoredSession()
+
+        XCTAssertNil(store.lastError)
+        XCTAssertEqual(store.statusMessage, LaunchDeckStrings.sessionCleared)
     }
 
     private func app(_ name: String, path: String) -> AppItem {

@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct AppGridPageView: View {
-    let entries: [LauncherEntry]
+    let entries: ArraySlice<LauncherEntry>
     let isSearchMode: Bool
     let isEditing: Bool
     let iconProvider: AppIconProvider
@@ -83,7 +83,7 @@ struct AppGridPageView: View {
         GeometryReader { proxy in
             let metrics = gridMetrics(for: proxy.size)
             LazyVGrid(columns: metrics.columns, spacing: metrics.rowSpacing) {
-                ForEach(Array(entries.prefix(metrics.pageCapacity))) { entry in
+                ForEach(entries.prefix(metrics.pageCapacity)) { entry in
                     LauncherTileView(
                         entry: entry,
                         tileWidth: metrics.tileWidth,

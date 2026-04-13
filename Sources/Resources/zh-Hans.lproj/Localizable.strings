@@ -25,6 +25,7 @@
 "settings.section.session" = "恢复与存储";
 "settings.section.diagnostics" = "诊断";
 "settings.section.appearance" = "显示";
+"settings.appearance_mode" = "外观风格";
 "settings.focus_search_on_launch" = "启动时聚焦搜索框";
 "settings.enable_wheel_paging" = "启用滚轮翻页";
 "settings.restore_last_session" = "恢复上次会话";
@@ -43,6 +44,9 @@
 "command.export_diagnostics" = "导出诊断报告…";
 "accessibility.reload_hint" = "重新扫描本机应用并刷新布局";
 "accessibility.settings_hint" = "打开偏好设置窗口";
+"appearance.follow_system" = "跟随系统";
+"appearance.light" = "浅色";
+"appearance.dark" = "深色";
 "status.apps_count" = "共 %ld 个应用，可拖拽分组或重排";
 "folder.app_count" = "%ld 个应用";
 "footer.page_position" = "第 %ld / %ld 页";

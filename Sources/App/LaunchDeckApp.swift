@@ -22,6 +22,7 @@ struct LaunchDeckApp: App {
         WindowGroup(LaunchDeckStrings.windowTitle, id: "main") {
             ContentView(store: store, preferences: preferences)
                 .frame(minWidth: WindowLayout.minimumSize.width, minHeight: WindowLayout.minimumSize.height)
+                .preferredColorScheme(preferences.appearanceMode.preferredColorScheme)
                 .task {
                     appDelegate.onWillTerminate = { [store] in
                         await store.flushPendingPersistence()
@@ -69,6 +70,7 @@ struct LaunchDeckApp: App {
                     store.notePreferencesReset()
                 }
             )
+            .preferredColorScheme(preferences.appearanceMode.preferredColorScheme)
         }
     }
 }
