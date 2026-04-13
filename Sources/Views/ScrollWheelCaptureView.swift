@@ -29,7 +29,11 @@ final class CaptureView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        registerIfNeeded()
+        if window == nil {
+            unregisterIfNeeded()
+        } else {
+            registerIfNeeded()
+        }
     }
 
     override func removeFromSuperview() {

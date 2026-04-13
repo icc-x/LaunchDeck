@@ -6,9 +6,12 @@ struct AppCatalogService {
     private let cacheStore = AppCatalogMetadataCacheStore()
     private let logger = Logger(subsystem: "com.icc.launchdeck", category: "Catalog")
 
-    func loadApplications(maxCount: Int = 280) -> [AppItem] {
+    func loadApplications() -> [AppItem] {
         let start = DispatchTime.now()
-        let candidates = collectCandidateURLs(maxCount: maxCount)
+        let candidates = AppCatalogScanner(
+            fileManager: fileManager,
+            roots: candidateRoots()
+        ).scan()
         let localeSignature = Self.localeSignature
         let cache = cacheStore.load(localeSignature: localeSignature)
 
@@ -72,48 +75,6 @@ struct AppCatalogService {
             "catalog.enrich count=\(enriched.count, privacy: .public) misses=\(cacheMisses, privacy: .public) elapsed_ms=\(Double(elapsedMs) / 1_000_000, privacy: .public)"
         )
         return enriched
-    }
-
-    private func collectCandidateURLs(maxCount: Int) -> [URL] {
-        let roots = candidateRoots()
-        var selectedByPath: [String: AppCandidate] = [:]
-        selectedByPath.reserveCapacity(maxCount)
-
-        for root in roots {
-            guard let enumerator = fileManager.enumerator(
-                at: root,
-                includingPropertiesForKeys: [.isPackageKey, .isDirectoryKey],
-                options: [.skipsHiddenFiles, .skipsPackageDescendants]
-            ) else {
-                continue
-            }
-
-            for case let fileURL as URL in enumerator {
-                guard fileURL.pathExtension.lowercased() == "app" else {
-                    continue
-                }
-
-                let resolvedPath = fileURL.resolvingSymlinksInPath().path
-                let candidate = AppCandidate(url: fileURL, priority: pathPriority(fileURL.path))
-
-                if let existing = selectedByPath[resolvedPath] {
-                    if candidate.priority > existing.priority {
-                        selectedByPath[resolvedPath] = candidate
-                    }
-                } else {
-                    selectedByPath[resolvedPath] = candidate
-                    if selectedByPath.count >= maxCount {
-                        break
-                    }
-                }
-            }
-
-            if selectedByPath.count >= maxCount {
-                break
-            }
-        }
-
-        return selectedByPath.values.map(\.url)
     }
 
     private func candidateRoots() -> [URL] {
@@ -242,13 +203,6 @@ struct AppCatalogService {
         return 2
     }
 
-    private func pathPriority(_ path: String) -> Int {
-        if path.hasPrefix("/System/Applications") { return 3 }
-        if path.hasPrefix("/Applications") { return 2 }
-        if path.hasPrefix(NSHomeDirectory()) { return 1 }
-        return 0
-    }
-
     private func fileStamp(for url: URL) -> TimeInterval? {
         guard let values = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
               let date = values.contentModificationDate else {
@@ -291,11 +245,6 @@ struct AppCatalogService {
         }
         return deduped
     }()
-}
-
-private struct AppCandidate {
-    let url: URL
-    let priority: Int
 }
 
 private struct AppCatalogMetadataCache: Codable {

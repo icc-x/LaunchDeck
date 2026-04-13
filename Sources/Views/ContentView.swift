@@ -241,37 +241,17 @@ struct ContentView: View {
         let now = Date()
         guard now.timeIntervalSince(lastWheelFlipAt) >= 0.16 else { return false }
 
-        let deltaX = event.scrollingDeltaX
-        let deltaY = event.scrollingDeltaY
-        let threshold: CGFloat = 3.0
-
-        if abs(deltaY) >= abs(deltaX), abs(deltaY) > threshold {
-            if deltaY < 0, store.currentPage < store.pages.count - 1 {
-                store.nextPage()
-                lastWheelFlipAt = now
-                return true
-            }
-            if deltaY > 0, store.currentPage > 0 {
-                store.previousPage()
-                lastWheelFlipAt = now
-                return true
-            }
+        guard let targetPage = WheelPageResolver.targetPage(
+            currentPage: store.currentPage,
+            pageCount: store.pages.count,
+            event: event
+        ) else {
             return false
         }
 
-        if abs(deltaX) > threshold {
-            if deltaX > 0, store.currentPage > 0 {
-                store.previousPage()
-                lastWheelFlipAt = now
-                return true
-            }
-            if deltaX < 0, store.currentPage < store.pages.count - 1 {
-                store.nextPage()
-                lastWheelFlipAt = now
-                return true
-            }
-        }
-        return false
+        store.goToPage(targetPage)
+        lastWheelFlipAt = now
+        return true
     }
 
     private func folderLayer(_ folder: FolderItem) -> some View {

@@ -1,5 +1,5 @@
-import Foundation
 import CoreGraphics
+import Foundation
 import os
 
 @MainActor
@@ -20,13 +20,14 @@ final class LauncherStore: ObservableObject {
     @Published private(set) var draggingEntryID: String?
     @Published private(set) var draggingFolderAppID: String?
 
-    private let launcher = AppLauncher()
+    private let appLauncher: AppLaunchClient
+    private let catalogClient: LauncherCatalogClient
     private let layoutPersistence: LauncherLayoutPersistence
     private let logger = Logger(subsystem: "com.icc.launchdeck", category: "Store")
+
     private var pageSize = 35
     private var filteredEntries: [LauncherEntry] = []
-    private var searchIndex: [SearchIndexItem] = []
-    private var isSearchIndexDirty = true
+    private var searchIndex = LauncherSearchIndex()
     private var draggingFolderID: String?
     private var edgeHoverDirection: Int?
     private var edgeHoverStartedAt = Date.distantPast
@@ -35,19 +36,21 @@ final class LauncherStore: ObservableObject {
     private var persistenceTask: Task<Void, Never>?
     private var filterTask: Task<Void, Never>?
     private var metadataEnrichmentTask: Task<Void, Never>?
-    private var persistenceWriteTask: Task<Void, Never>?
-    private var persistenceSaveSequence: UInt64 = 0
     private var layoutMutationVersion: UInt64 = 0
     private var lastPersistedFingerprint: UInt64?
     private var isPersistenceSuspended = false
+    private var hasLoadedCatalog = false
 
-    private struct SearchIndexItem: Sendable {
-        let app: AppItem
-        let normalizedName: String
-    }
-
-    init(layoutPersistence: LauncherLayoutPersistence = LauncherLayoutPersistence(), autoReload: Bool = true) {
+    init(
+        layoutPersistence: LauncherLayoutPersistence = LauncherLayoutPersistence(),
+        catalogClient: LauncherCatalogClient = .live,
+        appLauncher: AppLaunchClient = .live,
+        autoReload: Bool = true
+    ) {
         self.layoutPersistence = layoutPersistence
+        self.catalogClient = catalogClient
+        self.appLauncher = appLauncher
+
         if autoReload {
             Task { await reload() }
         }
@@ -55,50 +58,32 @@ final class LauncherStore: ObservableObject {
 
     func reload() async {
         let reloadStart = DispatchTime.now()
-        persistenceTask?.cancel()
-        persistenceTask = nil
-        persistenceWriteTask?.cancel()
-        persistenceWriteTask = nil
-        persistenceSaveSequence &+= 1
-        filterTask?.cancel()
-        filterTask = nil
-        metadataEnrichmentTask?.cancel()
-        metadataEnrichmentTask = nil
+        await flushPendingPersistence()
+        cancelReloadTasks()
         isPersistenceSuspended = false
         isLoading = true
         lastError = nil
         statusMessage = "正在扫描本机应用..."
+        lastPersistedFingerprint = nil
 
-        let persistedLayout: LauncherLayoutSnapshot?
-        do {
-            persistedLayout = try layoutPersistence.load()
-        } catch let error as LauncherLayoutPersistenceError {
-            persistedLayout = nil
-            switch error {
-            case let .incompatibleSchema(version, backupPath):
-                isPersistenceSuspended = true
-                lastError = "布局版本不兼容（schema v\(version)），已备份到：\(backupPath)。请升级应用后再恢复。"
-            }
-        } catch {
-            persistedLayout = nil
-            lastError = "布局文件损坏，已自动重置。"
-        }
-
-        let loaded = await Task.detached(priority: .userInitiated) {
-            AppCatalogService().loadApplications()
+        let persistedLayout = await loadPersistedLayout()
+        let loaded = await Task.detached(priority: .userInitiated) { [catalogClient] in
+            catalogClient.loadApplications()
         }.value
 
         allApps = loaded
         rootEntries = LauncherLayoutMerger.merge(apps: loaded, persisted: persistedLayout)
+        hasLoadedCatalog = true
         layoutMutationVersion &+= 1
-        markSearchIndexDirty()
+        searchIndex.markDirty()
         activeFolder = nil
         clearDragging()
+
         if !isPersistenceSuspended {
-            let fingerprint = layoutFingerprint(of: rootEntries)
-            persistLayoutNow(fingerprint: fingerprint)
+            await persistCurrentLayoutIfNeeded()
         }
-        statusMessage = loaded.isEmpty ? "未发现可展示的应用。" : "共 \(loaded.count) 个应用，可拖拽分组或重排"
+
+        statusMessage = defaultStatusMessage()
         isLoading = false
         applyFilter(resetPage: true)
         startMetadataEnrichmentIfNeeded(initialApps: loaded)
@@ -107,52 +92,16 @@ final class LauncherStore: ObservableObject {
         logger.info("store.reload.fast count=\(loaded.count, privacy: .public) elapsed_ms=\(Double(elapsedMs) / 1_000_000, privacy: .public)")
     }
 
-    private func startMetadataEnrichmentIfNeeded(initialApps: [AppItem]) {
-        guard !initialApps.isEmpty else { return }
-
-        metadataEnrichmentTask = Task { [initialApps] in
-            defer { self.metadataEnrichmentTask = nil }
-            let enriched = await Task.detached(priority: .utility) {
-                AppCatalogService().enrichApplications(initialApps)
-            }.value
-
-            guard !Task.isCancelled else { return }
-            guard self.allApps.map(\.id) == initialApps.map(\.id) else { return }
-            guard self.allApps != enriched else { return }
-
-            self.applyMetadataUpdate(enriched)
-        }
-    }
-
-    private func applyMetadataUpdate(_ apps: [AppItem]) {
-        let appByID = Dictionary(uniqueKeysWithValues: apps.map { ($0.id, $0) })
-
-        allApps = apps
-        rootEntries = rootEntries.map { entry in
-            switch entry {
-            case let .app(app):
-                return .app(appByID[app.id] ?? app)
-            case let .folder(folder):
-                var updatedFolder = folder
-                updatedFolder.apps = folder.apps.map { appByID[$0.id] ?? $0 }
-                return .folder(updatedFolder)
-            }
-        }
-
-        markSearchIndexDirty()
-        applyFilter()
-    }
-
-    func flushPendingPersistence() {
-        guard !isPersistenceSuspended else { return }
+    func flushPendingPersistence() async {
+        guard !isPersistenceSuspended, hasLoadedCatalog else { return }
         persistenceTask?.cancel()
         persistenceTask = nil
-        persistLayoutNow()
+        await persistCurrentLayoutIfNeeded()
     }
 
     func launch(_ app: AppItem) {
         statusMessage = "正在打开 \(app.name)..."
-        launcher.launch(app) { [weak self] error in
+        appLauncher.launch(app) { [weak self] error in
             Task { @MainActor in
                 guard let self else { return }
                 if let error {
@@ -212,11 +161,7 @@ final class LauncherStore: ObservableObject {
         guard isEditing else { return }
         isEditing = false
         clearDragging()
-        if let folder = activeFolder {
-            statusMessage = "已打开文件夹：\(folder.name)"
-        } else {
-            statusMessage = rootEntries.isEmpty ? "未发现可展示的应用。" : "共 \(allApps.count) 个应用，可拖拽分组或重排"
-        }
+        statusMessage = activeFolder.map { "已打开文件夹：\($0.name)" } ?? defaultStatusMessage()
     }
 
     func openFolder(_ folder: FolderItem) {
@@ -228,7 +173,7 @@ final class LauncherStore: ObservableObject {
     func closeFolder() {
         activeFolder = nil
         if queryKeyword.isEmpty {
-            statusMessage = rootEntries.isEmpty ? "未发现可展示的应用。" : "共 \(allApps.count) 个应用，可拖拽分组或重排"
+            statusMessage = defaultStatusMessage()
         }
     }
 
@@ -272,15 +217,34 @@ final class LauncherStore: ObservableObject {
             return
         }
 
-        let previousFingerprint = layoutFingerprint(of: rootEntries)
         let groupZone = groupingRect(in: tileSize)
-        if groupZone.contains(location), canGroup(draggedID: draggedID, targetID: targetEntry.id) {
-            group(draggedID: draggedID, targetID: targetEntry.id)
-        } else {
-            reorder(draggedID: draggedID, targetID: targetEntry.id)
+        let draggedName = layoutEditor().rootEntry(id: draggedID)?.displayName ?? ""
+        let isGrouping = groupZone.contains(location)
+        var groupedFolder: FolderItem?
+
+        let didChange = mutateLayout { editor in
+            if isGrouping, editor.canGroup(draggedID: draggedID, targetID: targetEntry.id) {
+                groupedFolder = editor.group(draggedID: draggedID, targetID: targetEntry.id)
+                return groupedFolder != nil
+            }
+
+            return editor.reorderRootEntry(draggedID: draggedID, targetID: targetEntry.id)
         }
 
-        persistIfEntriesChanged(from: previousFingerprint)
+        if didChange {
+            if let groupedFolder {
+                activeFolder = groupedFolder
+                if targetEntry.folderValue != nil {
+                    statusMessage = "已将 \(draggedName) 放入 \(groupedFolder.name)"
+                } else {
+                    statusMessage = "已创建文件夹：\(groupedFolder.name)"
+                }
+            } else {
+                statusMessage = "已重排图标顺序"
+            }
+            scheduleLayoutPersist()
+        }
+
         clearDragging()
         applyFilter()
     }
@@ -294,26 +258,28 @@ final class LauncherStore: ObservableObject {
     }
 
     func folderApps(in folder: FolderItem) -> [AppItem] {
-        currentFolder(for: folder.id)?.apps ?? folder.apps
+        layoutEditor().folderApps(in: folder)
     }
 
     func renameFolder(id folderID: String, to newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let shouldKeepOpened = activeFolder?.id == folderID
-        let previousFingerprint = layoutFingerprint(of: rootEntries)
+        var renamedFolder: FolderItem?
 
-        mutateFolder(id: folderID) { folder in
-            folder.name = trimmed
+        let didChange = mutateLayout { editor in
+            renamedFolder = editor.renameFolder(id: folderID, to: trimmed)
+            return renamedFolder != nil
         }
-        persistIfEntriesChanged(from: previousFingerprint)
+
+        guard didChange else { return }
+
+        scheduleLayoutPersist()
         applyFilter()
-        if shouldKeepOpened, let folder = currentFolder(for: folderID) {
-            activeFolder = folder
-            statusMessage = "已将文件夹重命名为 \(folder.name)"
-        } else {
-            statusMessage = "已将文件夹重命名为 \(trimmed)"
+        if shouldKeepOpened, let renamedFolder {
+            activeFolder = renamedFolder
         }
+        statusMessage = "已将文件夹重命名为 \(renamedFolder?.name ?? trimmed)"
     }
 
     func handleFolderDrop(on targetApp: AppItem, folderID: String) {
@@ -326,32 +292,32 @@ final class LauncherStore: ObservableObject {
             return
         }
 
-        let previousFingerprint = layoutFingerprint(of: rootEntries)
-        mutateFolder(id: folderID) { folder in
-            guard let from = folder.apps.firstIndex(where: { $0.id == draggedID }),
-                  let to = folder.apps.firstIndex(where: { $0.id == targetApp.id }),
-                  from != to else {
-                return
-            }
-
-            let app = folder.apps.remove(at: from)
-            let adjusted = from < to ? to - 1 : to
-            folder.apps.insert(app, at: adjusted)
+        var updatedFolder: FolderItem?
+        let didChange = mutateLayout { editor in
+            updatedFolder = editor.reorderFolderApp(
+                folderID: folderID,
+                draggedAppID: draggedID,
+                targetAppID: targetApp.id
+            )
+            return updatedFolder != nil
         }
-        persistIfEntriesChanged(from: previousFingerprint)
-        applyFilter()
-        if let folder = currentFolder(for: folderID) {
-            activeFolder = folder
-            statusMessage = "已在 \(folder.name) 内重排"
+
+        if didChange {
+            scheduleLayoutPersist()
+            applyFilter()
+            if let updatedFolder {
+                activeFolder = updatedFolder
+                statusMessage = "已在 \(updatedFolder.name) 内重排"
+            }
         }
         clearDragging()
     }
 
     func handleFolderDropToEnd(folderID: String) {
-        handleFolderDropToPageBoundary(folderID: folderID, currentPage: Int.max, direction: 1, pageSize: pageSize)
+        handleFolderDropToPageBoundary(folderID: folderID, currentPage: nil, direction: 1, pageSize: pageSize)
     }
 
-    func handleFolderDropToPageBoundary(folderID: String, currentPage: Int, direction: Int, pageSize: Int) {
+    func handleFolderDropToPageBoundary(folderID: String, currentPage: Int?, direction: Int, pageSize: Int) {
         guard queryKeyword.isEmpty else {
             clearDragging()
             return
@@ -361,29 +327,25 @@ final class LauncherStore: ObservableObject {
             return
         }
 
-        let previousFingerprint = layoutFingerprint(of: rootEntries)
-        mutateFolder(id: folderID) { folder in
-            guard let from = folder.apps.firstIndex(where: { $0.id == draggedID }) else { return }
-            let app = folder.apps.remove(at: from)
-
-            let resolvedPageSize = max(1, pageSize)
-            let total = folder.apps.count
-            if currentPage == Int.max {
-                folder.apps.append(app)
-                return
-            }
-
-            let pageStart = max(0, min(currentPage * resolvedPageSize, total))
-            let pageEndExclusive = max(pageStart, min((currentPage + 1) * resolvedPageSize, total))
-            let targetIndex = direction < 0 ? pageStart : pageEndExclusive
-            let clamped = max(0, min(targetIndex, folder.apps.count))
-            folder.apps.insert(app, at: clamped)
+        var updatedFolder: FolderItem?
+        let didChange = mutateLayout { editor in
+            updatedFolder = editor.moveFolderAppToBoundary(
+                folderID: folderID,
+                draggedAppID: draggedID,
+                currentPage: currentPage,
+                direction: direction,
+                pageSize: pageSize
+            )
+            return updatedFolder != nil
         }
-        persistIfEntriesChanged(from: previousFingerprint)
-        applyFilter()
-        if let folder = currentFolder(for: folderID) {
-            activeFolder = folder
-            statusMessage = "已在 \(folder.name) 内跨页移动"
+
+        if didChange {
+            scheduleLayoutPersist()
+            applyFilter()
+            if let updatedFolder {
+                activeFolder = updatedFolder
+                statusMessage = "已在 \(updatedFolder.name) 内跨页移动"
+            }
         }
         clearDragging()
     }
@@ -398,39 +360,19 @@ final class LauncherStore: ObservableObject {
             return
         }
 
-        let previousFingerprint = layoutFingerprint(of: rootEntries)
-        guard let folderIndex = rootEntries.firstIndex(where: {
-            guard case let .folder(folder) = $0 else { return false }
-            return folder.id == folderID
-        }), case var .folder(folder) = rootEntries[folderIndex] else {
-            clearDragging()
-            return
+        var extractedApp: AppItem?
+        let didChange = mutateLayout { editor in
+            extractedApp = editor.extractFolderAppToRoot(folderID: folderID, appID: draggedAppID)
+            return extractedApp != nil
         }
 
-        guard let appIndex = folder.apps.firstIndex(where: { $0.id == draggedAppID }) else {
-            clearDragging()
-            return
+        if didChange {
+            activeFolder = nil
+            statusMessage = "已将 \(extractedApp?.name ?? "应用") 移出文件夹"
+            scheduleLayoutPersist()
+            applyFilter()
         }
-
-        let extractedApp = folder.apps.remove(at: appIndex)
-
-        if folder.apps.isEmpty {
-            rootEntries.remove(at: folderIndex)
-            rootEntries.insert(.app(extractedApp), at: folderIndex)
-        } else if folder.apps.count == 1 {
-            let remain = folder.apps[0]
-            rootEntries[folderIndex] = .app(remain)
-            rootEntries.insert(.app(extractedApp), at: min(folderIndex + 1, rootEntries.count))
-        } else {
-            rootEntries[folderIndex] = .folder(folder)
-            rootEntries.insert(.app(extractedApp), at: min(folderIndex + 1, rootEntries.count))
-        }
-
-        activeFolder = nil
-        statusMessage = "已将 \(extractedApp.name) 移出文件夹"
-        persistIfEntriesChanged(from: previousFingerprint)
         clearDragging()
-        applyFilter()
     }
 
     func handleDragHoverAtPageEdge(direction: Int) {
@@ -481,16 +423,83 @@ final class LauncherStore: ObservableObject {
             return
         }
 
-        let previousFingerprint = layoutFingerprint(of: rootEntries)
         let pageStart = currentPage * pageSize
         let pageCount = pages[currentPage].count
         let pageEndExclusive = pageStart + pageCount
         let targetIndex = direction < 0 ? pageStart : pageEndExclusive
 
-        moveRootEntry(id: draggedID, to: targetIndex)
-        persistIfEntriesChanged(from: previousFingerprint)
-        statusMessage = direction < 0 ? "已跨页移动到当前页开头" : "已跨页移动到当前页末尾"
+        let didChange = mutateLayout { editor in
+            editor.moveRootEntry(id: draggedID, to: targetIndex)
+        }
+
+        if didChange {
+            scheduleLayoutPersist()
+            statusMessage = direction < 0 ? "已跨页移动到当前页开头" : "已跨页移动到当前页末尾"
+        }
         clearDragging()
+        applyFilter()
+    }
+
+    private func cancelReloadTasks() {
+        persistenceTask?.cancel()
+        persistenceTask = nil
+        filterTask?.cancel()
+        filterTask = nil
+        metadataEnrichmentTask?.cancel()
+        metadataEnrichmentTask = nil
+    }
+
+    private func loadPersistedLayout() async -> LauncherLayoutSnapshot? {
+        do {
+            return try await Task.detached(priority: .utility) { [layoutPersistence] in
+                try layoutPersistence.load()
+            }.value
+        } catch let error as LauncherLayoutPersistenceError {
+            switch error {
+            case let .incompatibleSchema(version, backupPath):
+                isPersistenceSuspended = true
+                lastError = "布局版本不兼容（schema v\(version)），已备份到：\(backupPath)。请升级应用后再恢复。"
+            }
+            return nil
+        } catch {
+            lastError = "布局文件损坏，已自动重置。"
+            return nil
+        }
+    }
+
+    private func startMetadataEnrichmentIfNeeded(initialApps: [AppItem]) {
+        guard !initialApps.isEmpty else { return }
+
+        metadataEnrichmentTask = Task { [initialApps, catalogClient] in
+            defer { self.metadataEnrichmentTask = nil }
+            let enriched = await Task.detached(priority: .utility) {
+                catalogClient.enrichApplications(initialApps)
+            }.value
+
+            guard !Task.isCancelled else { return }
+            guard self.allApps.map(\.id) == initialApps.map(\.id) else { return }
+            guard self.allApps != enriched else { return }
+
+            self.applyMetadataUpdate(enriched)
+        }
+    }
+
+    private func applyMetadataUpdate(_ apps: [AppItem]) {
+        let appByID = Dictionary(uniqueKeysWithValues: apps.map { ($0.id, $0) })
+
+        allApps = apps
+        rootEntries = rootEntries.map { entry in
+            switch entry {
+            case let .app(app):
+                return .app(appByID[app.id] ?? app)
+            case let .folder(folder):
+                var updatedFolder = folder
+                updatedFolder.apps = folder.apps.map { appByID[$0.id] ?? $0 }
+                return .folder(updatedFolder)
+            }
+        }
+
+        searchIndex.markDirty()
         applyFilter()
     }
 
@@ -515,16 +524,11 @@ final class LauncherStore: ObservableObject {
     private func applyFilter(resetPage: Bool = false) {
         let filterStart = DispatchTime.now()
         let keyword = queryKeyword
-        let nextFilteredEntries: [LauncherEntry]
 
         if keyword.isEmpty {
-            nextFilteredEntries = rootEntries
+            filteredEntries = rootEntries
         } else {
-            rebuildSearchIndexIfNeeded()
-            let normalizedKeyword = normalizedSearchString(keyword)
-            nextFilteredEntries = searchIndex
-                .filter { $0.normalizedName.contains(normalizedKeyword) }
-                .map { .app($0.app) }
+            filteredEntries = searchIndex.filter(entries: rootEntries, keyword: keyword)
 
             if isEditing {
                 isEditing = false
@@ -534,10 +538,7 @@ final class LauncherStore: ObservableObject {
             }
         }
 
-        // Always rebuild pages from the latest pageSize so resize can rebalance icons across pages.
-        filteredEntries = nextFilteredEntries
-        pages = chunked(filteredEntries, chunkSize: pageSize)
-
+        pages = LauncherPaging.chunked(filteredEntries, pageSize: pageSize)
         syncActiveFolder()
 
         guard !pages.isEmpty else {
@@ -557,55 +558,13 @@ final class LauncherStore: ObservableObject {
         }
     }
 
-    private func markSearchIndexDirty() {
-        isSearchIndexDirty = true
-    }
-
-    private func rebuildSearchIndexIfNeeded() {
-        guard isSearchIndexDirty else { return }
-        let apps = rootEntries.flatMap(\.flattenedApps)
-        searchIndex = apps.map { app in
-            SearchIndexItem(app: app, normalizedName: normalizedSearchString(app.name))
-        }
-        isSearchIndexDirty = false
-    }
-
-    private func normalizedSearchString(_ value: String) -> String {
-        value
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            .lowercased()
-    }
-
-    private func chunked(_ items: [LauncherEntry], chunkSize: Int) -> [[LauncherEntry]] {
-        guard !items.isEmpty else { return [] }
-        guard chunkSize > 0 else { return [items] }
-
-        var chunks: [[LauncherEntry]] = []
-        chunks.reserveCapacity((items.count + chunkSize - 1) / chunkSize)
-
-        var index = 0
-        while index < items.count {
-            let end = min(index + chunkSize, items.count)
-            chunks.append(Array(items[index..<end]))
-            index = end
-        }
-
-        return chunks
-    }
-
     private var queryKeyword: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func syncActiveFolder() {
         guard let activeFolder else { return }
-        self.activeFolder = currentFolder(for: activeFolder.id)
-    }
-
-    private func currentFolder(for folderID: String) -> FolderItem? {
-        rootEntries
-            .compactMap(\.folderValue)
-            .first(where: { $0.id == folderID })
+        self.activeFolder = layoutEditor().currentFolder(id: activeFolder.id)
     }
 
     private func groupingRect(in size: CGSize) -> CGRect {
@@ -619,196 +578,74 @@ final class LauncherStore: ObservableObject {
         )
     }
 
-    private func canGroup(draggedID: String, targetID: String) -> Bool {
-        guard let dragged = rootEntry(id: draggedID), let target = rootEntry(id: targetID) else {
-            return false
-        }
-
-        switch (dragged, target) {
-        case (.app, .app), (.app, .folder):
-            return true
-        default:
-            return false
-        }
+    private func defaultStatusMessage() -> String {
+        rootEntries.isEmpty ? "未发现可展示的应用。" : "共 \(allApps.count) 个应用，可拖拽分组或重排"
     }
 
-    private func reorder(draggedID: String, targetID: String) {
-        guard let from = rootIndex(id: draggedID), let to = rootIndex(id: targetID), from != to else {
-            return
-        }
-
-        moveRootEntry(from: from, to: to)
-        statusMessage = "已重排图标顺序"
+    private func layoutEditor() -> LauncherLayoutEditor {
+        LauncherLayoutEditor(entries: rootEntries)
     }
 
-    private func group(draggedID: String, targetID: String) {
-        guard let dragged = rootEntry(id: draggedID), let target = rootEntry(id: targetID) else {
-            return
-        }
+    @discardableResult
+    private func mutateLayout(_ mutation: (inout LauncherLayoutEditor) -> Bool) -> Bool {
+        var editor = layoutEditor()
+        let didChange = mutation(&editor)
+        guard didChange else { return false }
 
-        switch (dragged, target) {
-        case let (.app(draggedApp), .app(targetApp)):
-            createFolder(draggedApp: draggedApp, targetApp: targetApp, draggedID: draggedID, targetID: targetID)
-        case let (.app(draggedApp), .folder(folder)):
-            append(app: draggedApp, into: folder, draggedID: draggedID)
-        default:
-            break
-        }
-    }
-
-    private func createFolder(draggedApp: AppItem, targetApp: AppItem, draggedID: String, targetID: String) {
-        guard let draggedIndex = rootIndex(id: draggedID), let targetIndex = rootIndex(id: targetID) else {
-            return
-        }
-
-        let insertIndex = min(draggedIndex, targetIndex)
-        for index in [draggedIndex, targetIndex].sorted(by: >) {
-            rootEntries.remove(at: index)
-        }
-
-        let folder = FolderItem(
-            id: UUID().uuidString,
-            name: defaultFolderName(first: targetApp, second: draggedApp),
-            apps: [targetApp, draggedApp]
-        )
-        rootEntries.insert(.folder(folder), at: insertIndex)
-        activeFolder = folder
-        statusMessage = "已创建文件夹：\(folder.name)"
-    }
-
-    private func append(app: AppItem, into folder: FolderItem, draggedID: String) {
-        guard let draggedIndex = rootIndex(id: draggedID), let folderIndex = rootIndex(id: folder.entryID) else {
-            return
-        }
-
-        rootEntries.remove(at: draggedIndex)
-        let adjustedFolderIndex = draggedIndex < folderIndex ? folderIndex - 1 : folderIndex
-        guard case var .folder(updatedFolder) = rootEntries[adjustedFolderIndex] else { return }
-        guard !updatedFolder.apps.contains(where: { $0.id == app.id }) else { return }
-        updatedFolder.apps.append(app)
-        rootEntries[adjustedFolderIndex] = .folder(updatedFolder)
-        statusMessage = "已将 \(app.name) 放入 \(updatedFolder.name)"
-    }
-
-    private func moveRootEntry(id: String, to targetIndex: Int) {
-        guard let from = rootIndex(id: id) else { return }
-        moveRootEntry(from: from, to: targetIndex)
-    }
-
-    private func moveRootEntry(from: Int, to targetIndex: Int) {
-        guard rootEntries.indices.contains(from) else { return }
-
-        let entry = rootEntries.remove(at: from)
-        let clamped = max(0, min(targetIndex, rootEntries.count))
-        let adjusted = from < clamped ? clamped - 1 : clamped
-        rootEntries.insert(entry, at: max(0, min(adjusted, rootEntries.count)))
-    }
-
-    private func mutateFolder(id folderID: String, mutate: (inout FolderItem) -> Void) {
-        guard let index = rootEntries.firstIndex(where: {
-            guard case let .folder(folder) = $0 else { return false }
-            return folder.id == folderID
-        }) else {
-            return
-        }
-
-        guard case var .folder(folder) = rootEntries[index] else { return }
-        mutate(&folder)
-        rootEntries[index] = .folder(folder)
-    }
-
-    private func defaultFolderName(first: AppItem, second: AppItem) -> String {
-        let firstPrefix = first.name.split(separator: " ").first.map(String.init) ?? first.name
-        let secondPrefix = second.name.split(separator: " ").first.map(String.init) ?? second.name
-        if firstPrefix == secondPrefix {
-            return firstPrefix
-        }
-        return "\(firstPrefix) 与 \(secondPrefix)"
-    }
-
-    private func rootIndex(id: String) -> Int? {
-        rootEntries.firstIndex(where: { $0.id == id })
-    }
-
-    private func rootEntry(id: String) -> LauncherEntry? {
-        rootEntries.first(where: { $0.id == id })
-    }
-
-    private func persistIfEntriesChanged(from previousFingerprint: UInt64) {
-        let currentFingerprint = layoutFingerprint(of: rootEntries)
-        guard previousFingerprint != currentFingerprint else { return }
+        rootEntries = editor.entries
         layoutMutationVersion &+= 1
-        markSearchIndexDirty()
-        scheduleLayoutPersist()
+        searchIndex.markDirty()
+        return true
     }
 
     private func scheduleLayoutPersist(delayNanoseconds: UInt64 = 260_000_000) {
         guard !isPersistenceSuspended else { return }
         persistenceTask?.cancel()
+
         let expectedVersion = layoutMutationVersion
-        persistenceTask = Task { @MainActor in
+        let snapshot = LauncherLayoutSnapshot(rootEntries: rootEntries)
+        let fingerprint = LauncherLayoutEditor.layoutFingerprint(of: rootEntries)
+
+        persistenceTask = Task { [weak self, snapshot, fingerprint, expectedVersion] in
             try? await Task.sleep(nanoseconds: delayNanoseconds)
             guard !Task.isCancelled else { return }
-            guard expectedVersion == self.layoutMutationVersion else { return }
-            let snapshot = LauncherLayoutSnapshot(rootEntries: self.rootEntries)
-            let fingerprint = self.layoutFingerprint(of: self.rootEntries)
-            self.persistLayoutNow(snapshot: snapshot, fingerprint: fingerprint)
-            self.persistenceTask = nil
+            await self?.persistScheduledLayout(
+                snapshot: snapshot,
+                fingerprint: fingerprint,
+                expectedVersion: expectedVersion
+            )
         }
     }
 
-    private func persistLayoutNow(
-        snapshot: LauncherLayoutSnapshot? = nil,
-        fingerprint: UInt64? = nil
-    ) {
+    private func persistScheduledLayout(
+        snapshot: LauncherLayoutSnapshot,
+        fingerprint: UInt64,
+        expectedVersion: UInt64
+    ) async {
+        guard expectedVersion == layoutMutationVersion else { return }
+        await persist(snapshot: snapshot, fingerprint: fingerprint)
+        if expectedVersion == layoutMutationVersion {
+            persistenceTask = nil
+        }
+    }
+
+    private func persistCurrentLayoutIfNeeded() async {
+        let snapshot = LauncherLayoutSnapshot(rootEntries: rootEntries)
+        let fingerprint = LauncherLayoutEditor.layoutFingerprint(of: rootEntries)
+        await persist(snapshot: snapshot, fingerprint: fingerprint)
+    }
+
+    private func persist(snapshot: LauncherLayoutSnapshot, fingerprint: UInt64) async {
         guard !isPersistenceSuspended else { return }
-        let target = snapshot ?? LauncherLayoutSnapshot(rootEntries: rootEntries)
-        let targetFingerprint = fingerprint ?? layoutFingerprint(of: rootEntries)
-        guard targetFingerprint != lastPersistedFingerprint else { return }
+        guard fingerprint != lastPersistedFingerprint else { return }
 
-        persistenceSaveSequence &+= 1
-        let saveSequence = persistenceSaveSequence
-        persistenceWriteTask?.cancel()
-        persistenceWriteTask = Task { @MainActor in
-            do {
-                try await layoutPersistence.saveAsync(target)
-                guard !Task.isCancelled else { return }
-                guard saveSequence == self.persistenceSaveSequence else { return }
-                self.lastPersistedFingerprint = targetFingerprint
-                self.lastError = nil
-            } catch {
-                guard !Task.isCancelled else { return }
-                guard saveSequence == self.persistenceSaveSequence else { return }
-                self.lastError = "保存布局失败：\(error.localizedDescription)"
-            }
-
-            if saveSequence == self.persistenceSaveSequence {
-                self.persistenceWriteTask = nil
-            }
+        do {
+            try await layoutPersistence.saveAsync(snapshot)
+            lastPersistedFingerprint = fingerprint
+            lastError = nil
+        } catch {
+            lastError = "保存布局失败：\(error.localizedDescription)"
         }
-    }
-
-    private func layoutFingerprint(of entries: [LauncherEntry]) -> UInt64 {
-        var hasher = Hasher()
-        hasher.combine(entries.count)
-
-        for entry in entries {
-            switch entry {
-            case let .app(app):
-                hasher.combine(0)
-                hasher.combine(app.id)
-            case let .folder(folder):
-                hasher.combine(1)
-                hasher.combine(folder.id)
-                hasher.combine(folder.name)
-                hasher.combine(folder.apps.count)
-                for app in folder.apps {
-                    hasher.combine(app.id)
-                }
-            }
-        }
-
-        return UInt64(bitPattern: Int64(hasher.finalize()))
     }
 
     private func scheduleDragAutoClear() {

@@ -9,9 +9,10 @@ final class AppIconProvider {
     }
 
     private let cache = NSCache<NSString, NSImage>()
-    private var iconLoadedSubjects: [String: CurrentValueSubject<Int, Never>] = [:]
+    private var iconLoadedSubjects: [String: PassthroughSubject<Void, Never>] = [:]
     private let iconSize = NSSize(width: 72, height: 72)
     private var pendingJobs: [IconJob] = []
+    private var nextPendingJobIndex = 0
     private var pendingIDs = Set<String>()
     private var loadingTask: Task<Void, Never>?
 
@@ -48,15 +49,25 @@ final class AppIconProvider {
     }
 
     func iconLoadedPublisher(for appIDs: [String]) -> AnyPublisher<Void, Never> {
-        let uniqueIDs = Array(Set(appIDs))
+        let uniqueIDs = Array(Set(appIDs)).sorted()
         guard !uniqueIDs.isEmpty else {
-            return Empty(completeImmediately: false).eraseToAnyPublisher()
+            return Empty(completeImmediately: true).eraseToAnyPublisher()
         }
-        let publishers = uniqueIDs.map {
-            subject(for: $0)
+
+        let publishers = uniqueIDs.compactMap { appID -> AnyPublisher<Void, Never>? in
+            if cache.object(forKey: appID as NSString) != nil {
+                return nil
+            }
+
+            return subject(for: appID)
                 .map { _ in () }
                 .eraseToAnyPublisher()
         }
+
+        guard !publishers.isEmpty else {
+            return Empty(completeImmediately: true).eraseToAnyPublisher()
+        }
+
         return Publishers.MergeMany(publishers).eraseToAnyPublisher()
     }
 
@@ -78,13 +89,10 @@ final class AppIconProvider {
 
     private func runLoaderLoop() async {
         while !Task.isCancelled {
-            guard !pendingJobs.isEmpty else {
+            guard let job = dequeueJob() else {
                 loadingTask = nil
                 return
             }
-
-            let job = pendingJobs.removeFirst()
-            pendingIDs.remove(job.id)
 
             let key = job.id as NSString
             if cache.object(forKey: key) != nil {
@@ -94,19 +102,40 @@ final class AppIconProvider {
             let image = NSWorkspace.shared.icon(forFile: job.path)
             image.size = iconSize
             cache.setObject(image, forKey: key)
-            let subject = subject(for: job.id)
-            subject.value += 1
+            if let subject = iconLoadedSubjects.removeValue(forKey: job.id) {
+                subject.send(())
+                subject.send(completion: .finished)
+            }
             await Task.yield()
         }
 
         loadingTask = nil
     }
 
-    private func subject(for appID: String) -> CurrentValueSubject<Int, Never> {
+    private func dequeueJob() -> IconJob? {
+        guard nextPendingJobIndex < pendingJobs.count else {
+            pendingJobs.removeAll(keepingCapacity: true)
+            nextPendingJobIndex = 0
+            return nil
+        }
+
+        let job = pendingJobs[nextPendingJobIndex]
+        nextPendingJobIndex += 1
+        pendingIDs.remove(job.id)
+
+        if nextPendingJobIndex >= 64, nextPendingJobIndex * 2 >= pendingJobs.count {
+            pendingJobs.removeFirst(nextPendingJobIndex)
+            nextPendingJobIndex = 0
+        }
+
+        return job
+    }
+
+    private func subject(for appID: String) -> PassthroughSubject<Void, Never> {
         if let existing = iconLoadedSubjects[appID] {
             return existing
         }
-        let created = CurrentValueSubject<Int, Never>(0)
+        let created = PassthroughSubject<Void, Never>()
         iconLoadedSubjects[appID] = created
         return created
     }

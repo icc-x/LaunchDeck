@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var suppressRestoreUntil = Date.distantPast
     private var initializedWindows = Set<ObjectIdentifier>()
+    var onWillTerminate: (@MainActor () async -> Void)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -141,5 +142,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // No visible/miniaturized window (e.g. user closed with red button):
         // hand off to AppKit/SwiftUI default reopen behavior so a fresh window can be created.
         return true
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let onWillTerminate else {
+            return .terminateNow
+        }
+
+        Task { @MainActor in
+            await onWillTerminate()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 }

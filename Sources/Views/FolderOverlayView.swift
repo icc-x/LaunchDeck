@@ -282,46 +282,19 @@ struct FolderOverlayView: View {
         let now = Date()
         guard now.timeIntervalSince(lastWheelFlipAt) >= 0.16 else { return false }
 
-        let deltaX = event.scrollingDeltaX
-        let deltaY = event.scrollingDeltaY
-        let threshold: CGFloat = 3.0
-
-        if abs(deltaY) >= abs(deltaX), abs(deltaY) > threshold {
-            if deltaY < 0, currentPage < pagedAppsCache.count - 1 {
-                withAnimation(LaunchMotion.page) {
-                    currentPage += 1
-                }
-                lastWheelFlipAt = now
-                return true
-            }
-            if deltaY > 0, currentPage > 0 {
-                withAnimation(LaunchMotion.page) {
-                    currentPage -= 1
-                }
-                lastWheelFlipAt = now
-                return true
-            }
+        guard let targetPage = WheelPageResolver.targetPage(
+            currentPage: currentPage,
+            pageCount: pagedAppsCache.count,
+            event: event
+        ) else {
             return false
         }
 
-        if abs(deltaX) > threshold {
-            if deltaX > 0, currentPage > 0 {
-                withAnimation(LaunchMotion.page) {
-                    currentPage -= 1
-                }
-                lastWheelFlipAt = now
-                return true
-            }
-            if deltaX < 0, currentPage < pagedAppsCache.count - 1 {
-                withAnimation(LaunchMotion.page) {
-                    currentPage += 1
-                }
-                lastWheelFlipAt = now
-                return true
-            }
+        withAnimation(LaunchMotion.page) {
+            currentPage = targetPage
         }
-
-        return false
+        lastWheelFlipAt = now
+        return true
     }
 
     private func commitRename() {
@@ -334,7 +307,7 @@ struct FolderOverlayView: View {
     }
 
     private func rebuildPagedApps() {
-        pagedAppsCache = chunked(apps, chunkSize: folderPageSize)
+        pagedAppsCache = LauncherPaging.chunked(apps, pageSize: folderPageSize)
     }
 
     private var folderBadgeIconIDs: [String] {
@@ -363,21 +336,6 @@ struct FolderOverlayView: View {
         folderBadgeReloadToken &+= 1
     }
 
-    private func chunked(_ items: [AppItem], chunkSize: Int) -> [[AppItem]] {
-        guard !items.isEmpty else { return [] }
-        guard chunkSize > 0 else { return [items] }
-
-        var chunks: [[AppItem]] = []
-        var index = 0
-
-        while index < items.count {
-            let end = min(index + chunkSize, items.count)
-            chunks.append(Array(items[index..<end]))
-            index = end
-        }
-
-        return chunks
-    }
 }
 
 private struct FolderAppButton: View {
@@ -436,7 +394,10 @@ private struct FolderAppButton: View {
             iconSubscription = nil
         }
         .help(app.name)
-        .onTapGesture(perform: action)
+        .onTapGesture {
+            guard !isEditing else { return }
+            action()
+        }
         .onDrag {
             onBeginDragging()
             return NSItemProvider(object: "folder:\(app.id)" as NSString)

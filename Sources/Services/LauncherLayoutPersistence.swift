@@ -5,6 +5,22 @@ enum LauncherLayoutPersistenceError: Error {
 }
 
 struct LauncherLayoutPersistence: @unchecked Sendable {
+    private actor SnapshotWriter {
+        func write(
+            payload: LauncherLayoutSnapshot,
+            to url: URL,
+            fileManager: FileManager
+        ) throws {
+            try LauncherLayoutPersistence.writeSnapshotData(
+                payload: payload,
+                to: url,
+                fileManager: fileManager
+            )
+        }
+    }
+
+    private static let snapshotWriter = SnapshotWriter()
+
     private let fileManager: FileManager
     private let baseDirectory: URL
     private let layoutFileName = "layout-v2.json"
@@ -61,13 +77,11 @@ struct LauncherLayoutPersistence: @unchecked Sendable {
         let outputURL = layoutFileURL
         let payload = payloadForWrite(snapshot)
 
-        try await Task.detached(priority: .utility) {
-            try Self.writeSnapshotData(
-                payload: payload,
-                to: outputURL,
-                fileManager: .default
-            )
-        }.value
+        try await Self.snapshotWriter.write(
+            payload: payload,
+            to: outputURL,
+            fileManager: fileManager
+        )
     }
 
     private func loadSnapshot(at fileURL: URL) throws -> LauncherLayoutMigration.MigrationResult? {

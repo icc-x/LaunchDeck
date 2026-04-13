@@ -100,7 +100,10 @@ struct LauncherTileView: View {
         .animation(LaunchMotion.hover, value: isHovering)
         .animation(LaunchMotion.quickFade, value: isDropTargeted)
         .help(entry.displayName)
-        .onTapGesture(perform: handleTap)
+        .onTapGesture {
+            guard !isEditing else { return }
+            handleTap()
+        }
         .onHover { hovering in
             isHovering = hovering
         }

@@ -15,9 +15,16 @@ struct LaunchDeckApp: App {
         WindowGroup("LaunchDeck", id: "main") {
             ContentView(store: store)
                 .frame(minWidth: WindowLayout.minimumSize.width, minHeight: WindowLayout.minimumSize.height)
+                .task {
+                    appDelegate.onWillTerminate = { [store] in
+                        await store.flushPendingPersistence()
+                    }
+                }
                 .onChange(of: scenePhase) { _, phase in
                     if phase != .active {
-                        store.flushPendingPersistence()
+                        Task {
+                            await store.flushPendingPersistence()
+                        }
                     }
                 }
         }
