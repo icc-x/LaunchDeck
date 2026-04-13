@@ -245,6 +245,6 @@ struct LauncherLayoutEditor {
         if firstPrefix == secondPrefix {
             return firstPrefix
         }
-        return "\(firstPrefix) 与 \(secondPrefix)"
+        return LaunchDeckStrings.defaultFolderNamePair(first: firstPrefix, second: secondPrefix)
     }
 }

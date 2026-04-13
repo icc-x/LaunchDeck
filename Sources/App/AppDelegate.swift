@@ -1,4 +1,5 @@
 import AppKit
+import os
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private enum InitialWindowLayout {
@@ -8,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var suppressRestoreUntil = Date.distantPast
     private var initializedWindows = Set<ObjectIdentifier>()
+    private let logger = Logger(subsystem: "com.icc.launchdeck", category: "Lifecycle")
     var onWillTerminate: (@MainActor () async -> Void)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -15,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         installWindowObservers()
         configureAllWindows()
+        logger.info("app.did_finish_launching window_count=\(NSApp.windows.count, privacy: .public)")
     }
 
     deinit {
@@ -109,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         let now = Date()
         if now < suppressRestoreUntil {
+            logger.info("app.reopen.suppressed")
             return false
         }
 
@@ -123,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             // Some systems may emit a follow-up reopen callback for the same click.
             suppressRestoreUntil = now.addingTimeInterval(0.25)
+            logger.info("app.reopen.minimize_visible_windows count=\(visibleWindows.count, privacy: .public)")
             return false
         }
 
@@ -136,19 +141,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 window.makeKeyAndOrderFront(nil)
             }
             sender.activate(ignoringOtherApps: true)
+            logger.info("app.reopen.restore_miniaturized_windows count=\(miniaturizedWindows.count, privacy: .public)")
             return false
         }
 
         // No visible/miniaturized window (e.g. user closed with red button):
         // hand off to AppKit/SwiftUI default reopen behavior so a fresh window can be created.
+        logger.info("app.reopen.request_new_window")
         return true
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let onWillTerminate else {
+            logger.info("app.terminate.immediate")
             return .terminateNow
         }
 
+        logger.info("app.terminate.defer_for_flush")
         Task { @MainActor in
             await onWillTerminate()
             sender.reply(toApplicationShouldTerminate: true)

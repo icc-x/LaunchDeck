@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "LaunchDeck",
+    defaultLocalization: "zh-Hans",
     platforms: [
         .macOS(.v26)
     ],
@@ -12,7 +13,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "LaunchDeck",
-            path: "Sources"
+            path: "Sources",
+            resources: [
+                .process("Resources")
+            ]
         ),
         .testTarget(
             name: "LaunchDeckTests",

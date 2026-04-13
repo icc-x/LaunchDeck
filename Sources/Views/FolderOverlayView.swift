@@ -8,6 +8,8 @@ struct FolderOverlayView: View {
     let apps: [AppItem]
     let isEditing: Bool
     let isDraggingFolderApp: Bool
+    let folderPageSize: Int
+    let wheelPagingEnabled: Bool
     let iconProvider: AppIconProvider
     let namespace: Namespace.ID
     let onClose: () -> Void
@@ -32,7 +34,6 @@ struct FolderOverlayView: View {
     @State private var folderBadgeSubscription: AnyCancellable?
     @State private var subscribedFolderBadgeKey = ""
 
-    private let folderPageSize = 18
     private let folderSpacingScale: CGFloat = 0.5
 
     private var theme: LaunchTheme {
@@ -54,7 +55,7 @@ struct FolderOverlayView: View {
                 folderBadge
 
                 VStack(alignment: .leading, spacing: 2) {
-                    TextField("文件夹名称", text: $editingName)
+                    TextField(LaunchDeckStrings.folderNamePlaceholder, text: $editingName)
                         .font(.title2.weight(.semibold))
                         .foregroundStyle(theme.textPrimary)
                         .textFieldStyle(.plain)
@@ -64,8 +65,9 @@ struct FolderOverlayView: View {
                             editingName = newValue
                         }
                         .frame(maxWidth: 280, alignment: .leading)
+                        .accessibilityLabel(LaunchDeckStrings.folderNamePlaceholder)
 
-                    Text("\(apps.count) 个应用")
+                    Text(LaunchDeckStrings.appCountInFolder(apps.count))
                         .font(.subheadline)
                         .foregroundStyle(theme.textSecondary)
                 }
@@ -75,24 +77,24 @@ struct FolderOverlayView: View {
                 Button {
                     isNameFocused = true
                 } label: {
-                    Label("重命名", systemImage: "pencil")
+                    Label(LaunchDeckStrings.rename, systemImage: "pencil")
                         .labelStyle(.iconOnly)
                         .font(.title3)
                         .foregroundStyle(theme.controlSubtleForeground)
                 }
                 .buttonStyle(.plain)
-                .help("重命名文件夹")
+                .help(LaunchDeckStrings.rename)
 
                 Button {
                     onClose()
                 } label: {
-                    Label("关闭", systemImage: "xmark.circle.fill")
+                    Label(LaunchDeckStrings.close, systemImage: "xmark.circle.fill")
                         .labelStyle(.iconOnly)
                         .font(.title2)
                         .foregroundStyle(theme.controlSubtleForeground)
                 }
                 .buttonStyle(.plain)
-                .help("关闭文件夹")
+                .help(LaunchDeckStrings.close)
             }
 
             ZStack {
@@ -123,7 +125,7 @@ struct FolderOverlayView: View {
                     })
                 }
                 .overlay {
-                    if pagedAppsCache.count > 1 {
+                    if wheelPagingEnabled, pagedAppsCache.count > 1 {
                         ScrollWheelCaptureView { event in
                             handleFolderWheelPaging(event)
                         }
@@ -394,6 +396,7 @@ private struct FolderAppButton: View {
             iconSubscription = nil
         }
         .help(app.name)
+        .accessibilityLabel(app.name)
         .onTapGesture {
             guard !isEditing else { return }
             action()

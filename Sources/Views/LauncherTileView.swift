@@ -100,6 +100,7 @@ struct LauncherTileView: View {
         .animation(LaunchMotion.hover, value: isHovering)
         .animation(LaunchMotion.quickFade, value: isDropTargeted)
         .help(entry.displayName)
+        .accessibilityLabel(entry.displayName)
         .onTapGesture {
             guard !isEditing else { return }
             handleTap()
@@ -118,11 +119,11 @@ struct LauncherTileView: View {
             iconSubscription = nil
             subscribedIconKey = ""
         }
-        .onDrag {
-            if !isSearchMode {
+        .conditionalModifier(!isSearchMode) { view in
+            view.onDrag {
                 onBeginDragging(entry)
+                return NSItemProvider(object: entry.id as NSString)
             }
-            return NSItemProvider(object: entry.id as NSString)
         }
         .simultaneousGesture(
             LongPressGesture(minimumDuration: 0.42).onEnded { _ in

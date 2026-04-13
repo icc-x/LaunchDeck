@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 enum LauncherLayoutPersistenceError: Error {
     case incompatibleSchema(version: Int, backupPath: String)
@@ -25,6 +26,7 @@ struct LauncherLayoutPersistence: @unchecked Sendable {
     private let baseDirectory: URL
     private let layoutFileName = "layout-v2.json"
     private let legacyLayoutFileName = "layout-v1.json"
+    private let logger = Logger(subsystem: "com.icc.launchdeck", category: "LayoutPersistence")
 
     init(fileManager: FileManager = .default, baseDirectory: URL? = nil) {
         self.fileManager = fileManager
@@ -48,6 +50,7 @@ struct LauncherLayoutPersistence: @unchecked Sendable {
             guard let result else { return nil }
             if result.didMigrate {
                 try save(result.snapshot)
+                logger.info("layout.load.migrated path=\(primaryURL.path, privacy: .public)")
             }
             return result.snapshot
         }
@@ -59,6 +62,7 @@ struct LauncherLayoutPersistence: @unchecked Sendable {
             }
             try save(result.snapshot)
             try? fileManager.removeItem(at: legacyURL)
+            logger.info("layout.load.legacy_migrated path=\(legacyURL.path, privacy: .public)")
             return result.snapshot
         }
 
@@ -71,6 +75,7 @@ struct LauncherLayoutPersistence: @unchecked Sendable {
             to: layoutFileURL,
             fileManager: fileManager
         )
+        logger.info("layout.save.sync path=\(layoutFileURL.path, privacy: .public)")
     }
 
     func saveAsync(_ snapshot: LauncherLayoutSnapshot) async throws {
@@ -82,6 +87,7 @@ struct LauncherLayoutPersistence: @unchecked Sendable {
             to: outputURL,
             fileManager: fileManager
         )
+        logger.info("layout.save.async path=\(outputURL.path, privacy: .public)")
     }
 
     private func loadSnapshot(at fileURL: URL) throws -> LauncherLayoutMigration.MigrationResult? {
@@ -92,6 +98,7 @@ struct LauncherLayoutPersistence: @unchecked Sendable {
             switch error {
             case let .unsupportedSchema(version):
                 let backupURL = try archiveUnsupportedSchemaFile(at: fileURL, schemaVersion: version)
+                logger.error("layout.load.incompatible schema=\(version, privacy: .public) backup=\(backupURL.path, privacy: .public)")
                 throw LauncherLayoutPersistenceError.incompatibleSchema(
                     version: version,
                     backupPath: backupURL.path
@@ -99,6 +106,7 @@ struct LauncherLayoutPersistence: @unchecked Sendable {
             }
         } catch let error as DecodingError {
             try quarantineCorruptedFile(at: fileURL)
+            logger.error("layout.load.corrupted path=\(fileURL.path, privacy: .public)")
             throw error
         } catch {
             throw error
@@ -117,6 +125,7 @@ struct LauncherLayoutPersistence: @unchecked Sendable {
         let fileName = "layout-corrupted-\(timestamp)-\(UUID().uuidString).json"
         let target = directory.appendingPathComponent(fileName, isDirectory: false)
         try fileManager.moveItem(at: source, to: target)
+        logger.info("layout.quarantine path=\(target.path, privacy: .public)")
     }
 
     private func payloadForWrite(_ snapshot: LauncherLayoutSnapshot) -> LauncherLayoutSnapshot {
@@ -151,10 +160,11 @@ struct LauncherLayoutPersistence: @unchecked Sendable {
         let fileName = "layout-schema-\(schemaVersion)-\(timestamp)-\(UUID().uuidString).json"
         let target = directory.appendingPathComponent(fileName, isDirectory: false)
         try fileManager.moveItem(at: source, to: target)
+        logger.info("layout.archive_unsupported path=\(target.path, privacy: .public)")
         return target
     }
 
-    private static func defaultBaseDirectory(fileManager: FileManager) -> URL {
+    static func defaultBaseDirectory(fileManager: FileManager) -> URL {
         if let appSupport = try? fileManager.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,

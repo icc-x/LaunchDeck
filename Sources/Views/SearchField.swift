@@ -13,11 +13,12 @@ struct SearchField: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(theme.controlSubtleForeground)
 
-            TextField("搜索应用", text: $text)
+            TextField(LaunchDeckStrings.searchPlaceholder, text: $text)
                 .textFieldStyle(.plain)
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(theme.controlForeground)
                 .disableAutocorrection(true)
+                .accessibilityLabel(LaunchDeckStrings.searchPlaceholder)
 
             if !text.isEmpty {
                 Button {

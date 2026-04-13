@@ -13,6 +13,7 @@ final class LauncherStoreTests: XCTestCase {
         let safari = app("Safari", path: "/Applications/Safari.app")
         let terminal = app("Terminal", path: "/System/Applications/Utilities/Terminal.app")
         let persistence = LauncherLayoutPersistence(fileManager: fileManager, baseDirectory: directory)
+        let preferences = LauncherPreferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
 
         try persistence.save(
             LauncherLayoutSnapshot(entries: [
@@ -22,7 +23,9 @@ final class LauncherStoreTests: XCTestCase {
         )
 
         let store = LauncherStore(
+            preferences: preferences,
             layoutPersistence: persistence,
+            sessionPersistence: LauncherSessionPersistence(fileManager: fileManager, baseDirectory: directory),
             catalogClient: LauncherCatalogClient(
                 loadApplications: { [safari, terminal] },
                 enrichApplications: { $0 }
@@ -50,6 +53,81 @@ final class LauncherStoreTests: XCTestCase {
             .app(id: terminal.id),
             .app(id: safari.id)
         ])
+    }
+
+    func testReloadRestoresLatestPersistedSessionState() async throws {
+        let fileManager = FileManager.default
+        let directory = makeTemporaryDirectory(fileManager: fileManager)
+        defer { try? fileManager.removeItem(at: directory) }
+
+        let safari = app("Safari", path: "/Applications/Safari.app")
+        let terminal = app("Terminal", path: "/System/Applications/Utilities/Terminal.app")
+        let preferences = LauncherPreferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let sessionPersistence = LauncherSessionPersistence(fileManager: fileManager, baseDirectory: directory)
+
+        let store = LauncherStore(
+            preferences: preferences,
+            layoutPersistence: LauncherLayoutPersistence(fileManager: fileManager, baseDirectory: directory),
+            sessionPersistence: sessionPersistence,
+            catalogClient: LauncherCatalogClient(
+                loadApplications: { [safari, terminal] },
+                enrichApplications: { $0 }
+            ),
+            appLauncher: .noop,
+            autoReload: false
+        )
+
+        await store.reload()
+        store.updatePageSize(1)
+        store.goToPage(1)
+
+        await store.flushPendingPersistence()
+        await store.reload()
+
+        XCTAssertEqual(store.currentPage, 1)
+        XCTAssertEqual(sessionPersistence.load()?.currentPage, 1)
+    }
+
+    func testEnablingRestoreLastSessionAppliesPersistedSessionImmediately() async throws {
+        let fileManager = FileManager.default
+        let directory = makeTemporaryDirectory(fileManager: fileManager)
+        defer { try? fileManager.removeItem(at: directory) }
+
+        let safari = app("Safari", path: "/Applications/Safari.app")
+        let terminal = app("Terminal", path: "/System/Applications/Utilities/Terminal.app")
+        let preferences = LauncherPreferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+        preferences.restoreLastSession = false
+
+        let sessionPersistence = LauncherSessionPersistence(fileManager: fileManager, baseDirectory: directory)
+        try await sessionPersistence.saveAsync(
+            LauncherSessionSnapshot(
+                query: "term",
+                currentPage: 0,
+                activeFolderID: nil,
+                updatedAt: Date()
+            )
+        )
+
+        let store = LauncherStore(
+            preferences: preferences,
+            layoutPersistence: LauncherLayoutPersistence(fileManager: fileManager, baseDirectory: directory),
+            sessionPersistence: sessionPersistence,
+            catalogClient: LauncherCatalogClient(
+                loadApplications: { [safari, terminal] },
+                enrichApplications: { $0 }
+            ),
+            appLauncher: .noop,
+            autoReload: false
+        )
+
+        await store.reload()
+        XCTAssertEqual(store.query, "")
+
+        preferences.restoreLastSession = true
+        await store.handleRestoreLastSessionPreferenceChange()
+
+        XCTAssertEqual(store.query, "term")
+        XCTAssertEqual(store.statusMessage, LaunchDeckStrings.sessionRestored)
     }
 
     private func app(_ name: String, path: String) -> AppItem {

@@ -93,6 +93,6 @@ struct LauncherLayoutMerger {
         if !trimmed.isEmpty {
             return trimmed
         }
-        return apps.first?.name ?? "文件夹"
+        return apps.first?.name ?? LaunchDeckStrings.defaultFolderName
     }
 }

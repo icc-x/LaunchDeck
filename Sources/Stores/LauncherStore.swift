@@ -8,21 +8,38 @@ final class LauncherStore: ObservableObject {
     @Published private(set) var rootEntries: [LauncherEntry] = []
     @Published private(set) var pages: [[LauncherEntry]] = []
     @Published var query = "" {
-        didSet { scheduleFilter() }
+        didSet {
+            guard !isManagingQueryManually else { return }
+            scheduleFilter()
+            scheduleSessionPersist()
+        }
     }
-    @Published var currentPage = 0
+    @Published var currentPage = 0 {
+        didSet {
+            guard currentPage != oldValue else { return }
+            scheduleSessionPersist()
+        }
+    }
     @Published private(set) var pageTransitionDirection = 1
     @Published private(set) var isEditing = false
     @Published private(set) var isLoading = false
-    @Published private(set) var statusMessage = "正在读取应用列表..."
+    @Published private(set) var statusMessage = LaunchDeckStrings.scanningStatus()
     @Published var lastError: String?
-    @Published private(set) var activeFolder: FolderItem?
+    @Published private(set) var activeFolder: FolderItem? {
+        didSet {
+            guard activeFolder?.id != oldValue?.id else { return }
+            scheduleSessionPersist()
+        }
+    }
     @Published private(set) var draggingEntryID: String?
     @Published private(set) var draggingFolderAppID: String?
 
     private let appLauncher: AppLaunchClient
     private let catalogClient: LauncherCatalogClient
     private let layoutPersistence: LauncherLayoutPersistence
+    private let sessionPersistence: LauncherSessionPersistence
+    private let diagnosticsService: LauncherDiagnosticsService
+    private let preferences: LauncherPreferences
     private let logger = Logger(subsystem: "com.icc.launchdeck", category: "Store")
 
     private var pageSize = 35
@@ -36,34 +53,71 @@ final class LauncherStore: ObservableObject {
     private var persistenceTask: Task<Void, Never>?
     private var filterTask: Task<Void, Never>?
     private var metadataEnrichmentTask: Task<Void, Never>?
+    private var sessionTask: Task<Void, Never>?
     private var layoutMutationVersion: UInt64 = 0
     private var lastPersistedFingerprint: UInt64?
     private var isPersistenceSuspended = false
     private var hasLoadedCatalog = false
+    private var isManagingQueryManually = false
+    private var restoredSession: LauncherSessionSnapshot?
 
     init(
+        preferences: LauncherPreferences,
         layoutPersistence: LauncherLayoutPersistence = LauncherLayoutPersistence(),
+        sessionPersistence: LauncherSessionPersistence = LauncherSessionPersistence(),
+        diagnosticsService: LauncherDiagnosticsService = LauncherDiagnosticsService(),
         catalogClient: LauncherCatalogClient = .live,
         appLauncher: AppLaunchClient = .live,
         autoReload: Bool = true
     ) {
+        self.preferences = preferences
         self.layoutPersistence = layoutPersistence
+        self.sessionPersistence = sessionPersistence
+        self.diagnosticsService = diagnosticsService
         self.catalogClient = catalogClient
         self.appLauncher = appLauncher
+        restoredSession = preferences.restoreLastSession ? sessionPersistence.load() : nil
 
         if autoReload {
             Task { await reload() }
         }
     }
 
+    var footerDetailText: String? {
+        var components: [String] = []
+
+        if pages.count > 1 {
+            components.append(
+                LaunchDeckStrings.pagePosition(
+                    current: currentPage + 1,
+                    total: pages.count
+                )
+            )
+        }
+
+        if !queryKeyword.isEmpty {
+            components.append(LaunchDeckStrings.resultsCount(filteredEntries.count))
+        }
+
+        return components.isEmpty ? nil : components.joined(separator: " • ")
+    }
+
+    var layoutStoragePath: String {
+        layoutPersistence.storagePath
+    }
+
+    var sessionStoragePath: String {
+        sessionPersistence.storagePath
+    }
+
     func reload() async {
         let reloadStart = DispatchTime.now()
         await flushPendingPersistence()
-        cancelReloadTasks()
+        cancelTransientTasks()
         isPersistenceSuspended = false
         isLoading = true
         lastError = nil
-        statusMessage = "正在扫描本机应用..."
+        statusMessage = LaunchDeckStrings.scanningStatus()
         lastPersistedFingerprint = nil
 
         let persistedLayout = await loadPersistedLayout()
@@ -78,37 +132,105 @@ final class LauncherStore: ObservableObject {
         searchIndex.markDirty()
         activeFolder = nil
         clearDragging()
+        statusMessage = defaultStatusMessage()
+        isLoading = false
+        applyFilter(resetPage: true)
+        restoreSessionIfNeeded()
 
         if !isPersistenceSuspended {
             await persistCurrentLayoutIfNeeded()
         }
-
-        statusMessage = defaultStatusMessage()
-        isLoading = false
-        applyFilter(resetPage: true)
+        scheduleSessionPersist()
         startMetadataEnrichmentIfNeeded(initialApps: loaded)
 
         let elapsedMs = DispatchTime.now().uptimeNanoseconds - reloadStart.uptimeNanoseconds
-        logger.info("store.reload.fast count=\(loaded.count, privacy: .public) elapsed_ms=\(Double(elapsedMs) / 1_000_000, privacy: .public)")
+        logger.info(
+            "store.reload.fast count=\(loaded.count, privacy: .public) elapsed_ms=\(Double(elapsedMs) / 1_000_000, privacy: .public)"
+        )
     }
 
     func flushPendingPersistence() async {
-        guard !isPersistenceSuspended, hasLoadedCatalog else { return }
+        guard hasLoadedCatalog else { return }
         persistenceTask?.cancel()
         persistenceTask = nil
-        await persistCurrentLayoutIfNeeded()
+        sessionTask?.cancel()
+        sessionTask = nil
+
+        if !isPersistenceSuspended {
+            await persistCurrentLayoutIfNeeded()
+        }
+        await persistCurrentSessionIfNeeded()
+    }
+
+    func exportDiagnostics() async {
+        let report = diagnosticsService.makeReport(
+            preferences: preferences.snapshot,
+            restoredSession: restoredSession,
+            layoutPath: layoutStoragePath,
+            sessionPath: sessionStoragePath,
+            allAppsCount: allApps.count,
+            rootEntries: rootEntries,
+            query: query,
+            currentPage: currentPage,
+            pagesCount: pages.count,
+            activeFolder: activeFolder,
+            isEditing: isEditing,
+            isLoading: isLoading,
+            lastError: lastError,
+            statusMessage: statusMessage
+        )
+
+        do {
+            _ = try await diagnosticsService.export(report: report)
+            statusMessage = LaunchDeckStrings.diagnosticsExported
+        } catch let error as LauncherDiagnosticsError {
+            switch error {
+            case .cancelled:
+                statusMessage = LaunchDeckStrings.diagnosticsExportCancelled
+            }
+        } catch {
+            lastError = LaunchDeckStrings.diagnosticsExportFailed(error.localizedDescription)
+        }
+    }
+
+    func clearRestoredSession() async {
+        sessionTask?.cancel()
+        sessionTask = nil
+        restoredSession = nil
+        do {
+            try await sessionPersistence.deleteAsync()
+            statusMessage = LaunchDeckStrings.sessionCleared
+            logger.info("store.session.cleared")
+        } catch {
+            logger.error("store.session.clear_failed error=\(error.localizedDescription, privacy: .public)")
+            lastError = LaunchDeckStrings.sessionClearFailed(error.localizedDescription)
+        }
+    }
+
+    func handleRestoreLastSessionPreferenceChange() async {
+        if preferences.restoreLastSession {
+            restoredSession = sessionPersistence.load()
+            restoreSessionIfNeeded()
+            scheduleSessionPersist()
+        } else {
+            await clearRestoredSession()
+        }
+    }
+
+    func notePreferencesReset() {
+        statusMessage = LaunchDeckStrings.preferencesReset
     }
 
     func launch(_ app: AppItem) {
-        statusMessage = "正在打开 \(app.name)..."
+        statusMessage = LaunchDeckStrings.openingApp(app.name)
         appLauncher.launch(app) { [weak self] error in
             Task { @MainActor in
                 guard let self else { return }
                 if let error {
                     self.lastError = error
-                    self.statusMessage = "打开失败：\(app.name)"
+                    self.statusMessage = LaunchDeckStrings.openAppFailed(app.name)
                 } else {
-                    self.statusMessage = "已打开 \(app.name)"
+                    self.statusMessage = LaunchDeckStrings.openedApp(app.name)
                 }
             }
         }
@@ -153,7 +275,7 @@ final class LauncherStore: ObservableObject {
         guard queryKeyword.isEmpty else { return }
         if !isEditing {
             isEditing = true
-            statusMessage = "编辑模式：拖拽可重排或分组"
+            statusMessage = LaunchDeckStrings.editingStatus()
         }
     }
 
@@ -161,13 +283,13 @@ final class LauncherStore: ObservableObject {
         guard isEditing else { return }
         isEditing = false
         clearDragging()
-        statusMessage = activeFolder.map { "已打开文件夹：\($0.name)" } ?? defaultStatusMessage()
+        statusMessage = activeFolder.map { LaunchDeckStrings.folderOpened($0.name) } ?? defaultStatusMessage()
     }
 
     func openFolder(_ folder: FolderItem) {
         guard queryKeyword.isEmpty else { return }
         activeFolder = folder
-        statusMessage = "已打开文件夹：\(folder.name)"
+        statusMessage = LaunchDeckStrings.folderOpened(folder.name)
     }
 
     func closeFolder() {
@@ -235,12 +357,12 @@ final class LauncherStore: ObservableObject {
             if let groupedFolder {
                 activeFolder = groupedFolder
                 if targetEntry.folderValue != nil {
-                    statusMessage = "已将 \(draggedName) 放入 \(groupedFolder.name)"
+                    statusMessage = LaunchDeckStrings.groupedIntoFolder(draggedName, folderName: groupedFolder.name)
                 } else {
-                    statusMessage = "已创建文件夹：\(groupedFolder.name)"
+                    statusMessage = LaunchDeckStrings.createdFolder(groupedFolder.name)
                 }
             } else {
-                statusMessage = "已重排图标顺序"
+                statusMessage = LaunchDeckStrings.rootReordered()
             }
             scheduleLayoutPersist()
         }
@@ -279,7 +401,7 @@ final class LauncherStore: ObservableObject {
         if shouldKeepOpened, let renamedFolder {
             activeFolder = renamedFolder
         }
-        statusMessage = "已将文件夹重命名为 \(renamedFolder?.name ?? trimmed)"
+        statusMessage = LaunchDeckStrings.folderRenamed(renamedFolder?.name ?? trimmed)
     }
 
     func handleFolderDrop(on targetApp: AppItem, folderID: String) {
@@ -307,14 +429,14 @@ final class LauncherStore: ObservableObject {
             applyFilter()
             if let updatedFolder {
                 activeFolder = updatedFolder
-                statusMessage = "已在 \(updatedFolder.name) 内重排"
+                statusMessage = LaunchDeckStrings.folderReordered(updatedFolder.name)
             }
         }
         clearDragging()
     }
 
     func handleFolderDropToEnd(folderID: String) {
-        handleFolderDropToPageBoundary(folderID: folderID, currentPage: nil, direction: 1, pageSize: pageSize)
+        handleFolderDropToPageBoundary(folderID: folderID, currentPage: nil, direction: 1, pageSize: preferences.folderPageSize)
     }
 
     func handleFolderDropToPageBoundary(folderID: String, currentPage: Int?, direction: Int, pageSize: Int) {
@@ -344,7 +466,7 @@ final class LauncherStore: ObservableObject {
             applyFilter()
             if let updatedFolder {
                 activeFolder = updatedFolder
-                statusMessage = "已在 \(updatedFolder.name) 内跨页移动"
+                statusMessage = LaunchDeckStrings.folderCrossPageMoved(updatedFolder.name)
             }
         }
         clearDragging()
@@ -368,7 +490,7 @@ final class LauncherStore: ObservableObject {
 
         if didChange {
             activeFolder = nil
-            statusMessage = "已将 \(extractedApp?.name ?? "应用") 移出文件夹"
+            statusMessage = LaunchDeckStrings.folderExtracted(extractedApp?.name ?? LaunchDeckStrings.fallbackAppName)
             scheduleLayoutPersist()
             applyFilter()
         }
@@ -434,19 +556,21 @@ final class LauncherStore: ObservableObject {
 
         if didChange {
             scheduleLayoutPersist()
-            statusMessage = direction < 0 ? "已跨页移动到当前页开头" : "已跨页移动到当前页末尾"
+            statusMessage = LaunchDeckStrings.rootMovedToPageBoundary(direction: direction)
         }
         clearDragging()
         applyFilter()
     }
 
-    private func cancelReloadTasks() {
+    private func cancelTransientTasks() {
         persistenceTask?.cancel()
         persistenceTask = nil
         filterTask?.cancel()
         filterTask = nil
         metadataEnrichmentTask?.cancel()
         metadataEnrichmentTask = nil
+        sessionTask?.cancel()
+        sessionTask = nil
     }
 
     private func loadPersistedLayout() async -> LauncherLayoutSnapshot? {
@@ -458,11 +582,11 @@ final class LauncherStore: ObservableObject {
             switch error {
             case let .incompatibleSchema(version, backupPath):
                 isPersistenceSuspended = true
-                lastError = "布局版本不兼容（schema v\(version)），已备份到：\(backupPath)。请升级应用后再恢复。"
+                lastError = LaunchDeckStrings.persistenceIncompatible(version: version, backupPath: backupPath)
             }
             return nil
         } catch {
-            lastError = "布局文件损坏，已自动重置。"
+            lastError = LaunchDeckStrings.persistenceCorrupted()
             return nil
         }
     }
@@ -501,6 +625,44 @@ final class LauncherStore: ObservableObject {
 
         searchIndex.markDirty()
         applyFilter()
+    }
+
+    private func restoreSessionIfNeeded() {
+        guard preferences.restoreLastSession, let restoredSession else { return }
+        guard !isLoading else { return }
+        let previousQuery = query
+        let previousPage = currentPage
+        let previousActiveFolderID = activeFolder?.id
+
+        setQuery(restoredSession.query, resetPage: true, immediate: true)
+        if !pages.isEmpty {
+            currentPage = min(restoredSession.currentPage, pages.count - 1)
+        }
+        if queryKeyword.isEmpty, let folderID = restoredSession.activeFolderID {
+            activeFolder = layoutEditor().currentFolder(id: folderID)
+            if let activeFolder {
+                statusMessage = LaunchDeckStrings.folderOpened(activeFolder.name)
+            }
+        }
+
+        if activeFolder == nil,
+           previousQuery != query || previousPage != currentPage || previousActiveFolderID != activeFolder?.id {
+            statusMessage = LaunchDeckStrings.sessionRestored
+        }
+        logger.info("store.session.restore page=\(self.currentPage, privacy: .public)")
+    }
+
+    private func setQuery(_ value: String, resetPage: Bool, immediate: Bool) {
+        isManagingQueryManually = true
+        query = value
+        isManagingQueryManually = false
+
+        if immediate {
+            applyFilter(resetPage: resetPage)
+            scheduleSessionPersist()
+        } else {
+            scheduleFilter(resetPage: resetPage)
+        }
     }
 
     private func scheduleFilter(resetPage: Bool = false, immediate: Bool = false) {
@@ -554,7 +716,9 @@ final class LauncherStore: ObservableObject {
 
         if !keyword.isEmpty {
             let elapsedMs = DispatchTime.now().uptimeNanoseconds - filterStart.uptimeNanoseconds
-            logger.info("store.filter keyword_len=\(keyword.count, privacy: .public) result=\(self.filteredEntries.count, privacy: .public) elapsed_ms=\(Double(elapsedMs) / 1_000_000, privacy: .public)")
+            logger.info(
+                "store.filter keyword_len=\(keyword.count, privacy: .public) result=\(self.filteredEntries.count, privacy: .public) elapsed_ms=\(Double(elapsedMs) / 1_000_000, privacy: .public)"
+            )
         }
     }
 
@@ -579,7 +743,7 @@ final class LauncherStore: ObservableObject {
     }
 
     private func defaultStatusMessage() -> String {
-        rootEntries.isEmpty ? "未发现可展示的应用。" : "共 \(allApps.count) 个应用，可拖拽分组或重排"
+        rootEntries.isEmpty ? LaunchDeckStrings.noAppsStatus() : LaunchDeckStrings.appCount(allApps.count)
     }
 
     private func layoutEditor() -> LauncherLayoutEditor {
@@ -623,7 +787,7 @@ final class LauncherStore: ObservableObject {
         expectedVersion: UInt64
     ) async {
         guard expectedVersion == layoutMutationVersion else { return }
-        await persist(snapshot: snapshot, fingerprint: fingerprint)
+        await persistLayout(snapshot: snapshot, fingerprint: fingerprint)
         if expectedVersion == layoutMutationVersion {
             persistenceTask = nil
         }
@@ -632,10 +796,10 @@ final class LauncherStore: ObservableObject {
     private func persistCurrentLayoutIfNeeded() async {
         let snapshot = LauncherLayoutSnapshot(rootEntries: rootEntries)
         let fingerprint = LauncherLayoutEditor.layoutFingerprint(of: rootEntries)
-        await persist(snapshot: snapshot, fingerprint: fingerprint)
+        await persistLayout(snapshot: snapshot, fingerprint: fingerprint)
     }
 
-    private func persist(snapshot: LauncherLayoutSnapshot, fingerprint: UInt64) async {
+    private func persistLayout(snapshot: LauncherLayoutSnapshot, fingerprint: UInt64) async {
         guard !isPersistenceSuspended else { return }
         guard fingerprint != lastPersistedFingerprint else { return }
 
@@ -644,8 +808,45 @@ final class LauncherStore: ObservableObject {
             lastPersistedFingerprint = fingerprint
             lastError = nil
         } catch {
-            lastError = "保存布局失败：\(error.localizedDescription)"
+            logger.error("store.layout.save_failed error=\(error.localizedDescription, privacy: .public)")
+            lastError = LaunchDeckStrings.persistenceSaveFailed(error.localizedDescription)
         }
+    }
+
+    private func scheduleSessionPersist(delayNanoseconds: UInt64 = 180_000_000) {
+        guard preferences.restoreLastSession, hasLoadedCatalog else { return }
+        sessionTask?.cancel()
+        let snapshot = makeSessionSnapshot()
+
+        sessionTask = Task { [weak self, snapshot] in
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            guard !Task.isCancelled else { return }
+            await self?.persistSession(snapshot)
+        }
+    }
+
+    private func persistCurrentSessionIfNeeded() async {
+        guard preferences.restoreLastSession, hasLoadedCatalog else { return }
+        await persistSession(makeSessionSnapshot())
+    }
+
+    private func persistSession(_ snapshot: LauncherSessionSnapshot) async {
+        do {
+            try await sessionPersistence.saveAsync(snapshot)
+            restoredSession = snapshot
+        } catch {
+            logger.error("store.session.save_failed error=\(error.localizedDescription, privacy: .public)")
+            lastError = LaunchDeckStrings.sessionSaveFailed(error.localizedDescription)
+        }
+    }
+
+    private func makeSessionSnapshot() -> LauncherSessionSnapshot {
+        LauncherSessionSnapshot(
+            query: query,
+            currentPage: currentPage,
+            activeFolderID: queryKeyword.isEmpty ? activeFolder?.id : nil,
+            updatedAt: Date()
+        )
     }
 
     private func scheduleDragAutoClear() {

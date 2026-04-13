@@ -118,7 +118,7 @@ extension LauncherLayoutSnapshot {
 
     private static func normalizedFolderName(_ name: String) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "文件夹" : trimmed
+        return trimmed.isEmpty ? LaunchDeckStrings.defaultFolderName : trimmed
     }
 
     private static func deduplicated(_ values: [String]) -> [String] {
