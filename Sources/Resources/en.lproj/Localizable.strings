@@ -25,6 +25,7 @@
 "settings.section.session" = "Recovery & Storage";
 "settings.section.diagnostics" = "Diagnostics";
 "settings.section.appearance" = "Display";
+"settings.section.window" = "Window";
 "settings.appearance_mode" = "Appearance";
 "settings.focus_search_on_launch" = "Focus search field on launch";
 "settings.enable_wheel_paging" = "Enable wheel paging";
@@ -37,6 +38,10 @@
 "settings.reset_defaults" = "Reset to Defaults";
 "settings.layout_path" = "Layout file";
 "settings.session_path" = "Session file";
+"settings.window.description" = "These settings affect newly opened main windows and the next app launch.";
+"settings.minimum_visible_icons" = "Minimum visible icons at launch";
+"settings.default_window_visible_area" = "Launch window area";
+"settings.startup_window_top_inset" = "Launch window top inset";
 "settings.diagnostics.description" = "Export layout, preferences, session, and runtime summary for debugging.";
 "diagnostics.file_name" = "LaunchDeck-Diagnostics.json";
 "diagnostics.export.action" = "Export Diagnostics";

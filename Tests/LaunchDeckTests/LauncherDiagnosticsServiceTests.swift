@@ -21,7 +21,10 @@ final class LauncherDiagnosticsServiceTests: XCTestCase {
                 restoreLastSession: true,
                 showStatusDetails: true,
                 prefetchPageDepth: 1,
-                folderPageSize: 18
+                folderPageSize: 18,
+                minimumVisibleIcons: 30,
+                defaultWindowVisibleAreaPercent: 40,
+                startupWindowTopInset: 96
             ),
             restoredSession: LauncherSessionSnapshot(
                 query: "",

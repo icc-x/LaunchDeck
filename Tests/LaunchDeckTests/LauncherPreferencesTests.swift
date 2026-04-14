@@ -10,8 +10,14 @@ final class LauncherPreferencesTests: XCTestCase {
 
         XCTAssertFalse(preferences.focusSearchOnLaunch)
         XCTAssertEqual(preferences.prefetchPageDepth, 0)
+        XCTAssertEqual(preferences.minimumVisibleIcons, 30)
+        XCTAssertEqual(preferences.defaultWindowVisibleAreaPercent, 40)
+        XCTAssertEqual(preferences.startupWindowTopInset, 96)
         XCTAssertFalse(preferences.snapshot.focusSearchOnLaunch)
         XCTAssertEqual(preferences.snapshot.prefetchPageDepth, 0)
+        XCTAssertEqual(preferences.snapshot.minimumVisibleIcons, 30)
+        XCTAssertEqual(preferences.snapshot.defaultWindowVisibleAreaPercent, 40)
+        XCTAssertEqual(preferences.snapshot.startupWindowTopInset, 96)
     }
 
     func testSnapshotReflectsCurrentValues() {
@@ -25,6 +31,9 @@ final class LauncherPreferencesTests: XCTestCase {
         preferences.showStatusDetails = false
         preferences.prefetchPageDepth = 3
         preferences.folderPageSize = 24
+        preferences.minimumVisibleIcons = 42
+        preferences.defaultWindowVisibleAreaPercent = 55
+        preferences.startupWindowTopInset = 120
 
         XCTAssertEqual(
             preferences.snapshot,
@@ -35,7 +44,10 @@ final class LauncherPreferencesTests: XCTestCase {
                 restoreLastSession: false,
                 showStatusDetails: false,
                 prefetchPageDepth: 3,
-                folderPageSize: 24
+                folderPageSize: 24,
+                minimumVisibleIcons: 42,
+                defaultWindowVisibleAreaPercent: 55,
+                startupWindowTopInset: 120
             )
         )
     }
@@ -46,9 +58,15 @@ final class LauncherPreferencesTests: XCTestCase {
 
         preferences.prefetchPageDepth = 9
         preferences.folderPageSize = 99
+        preferences.minimumVisibleIcons = 99
+        preferences.defaultWindowVisibleAreaPercent = 99
+        preferences.startupWindowTopInset = 999
 
         XCTAssertEqual(preferences.prefetchPageDepth, 3)
         XCTAssertEqual(preferences.folderPageSize, 30)
+        XCTAssertEqual(preferences.minimumVisibleIcons, 72)
+        XCTAssertEqual(preferences.defaultWindowVisibleAreaPercent, 70)
+        XCTAssertEqual(preferences.startupWindowTopInset, 240)
     }
 
     func testResetRestoresDefaultConfiguration() {
@@ -62,6 +80,9 @@ final class LauncherPreferencesTests: XCTestCase {
         preferences.showStatusDetails = false
         preferences.prefetchPageDepth = 3
         preferences.folderPageSize = 24
+        preferences.minimumVisibleIcons = 42
+        preferences.defaultWindowVisibleAreaPercent = 55
+        preferences.startupWindowTopInset = 120
 
         preferences.reset()
 

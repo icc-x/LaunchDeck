@@ -29,6 +29,7 @@ enum LaunchDeckStrings {
     static var settingsSessionSection: String { localizedString(forKey: "settings.section.session", defaultValue: "恢复与存储") }
     static var settingsDiagnosticsSection: String { localizedString(forKey: "settings.section.diagnostics", defaultValue: "诊断") }
     static var settingsAppearanceSection: String { localizedString(forKey: "settings.section.appearance", defaultValue: "显示") }
+    static var settingsWindowSection: String { localizedString(forKey: "settings.section.window", defaultValue: "窗口") }
     static var settingsAppearanceMode: String { localizedString(forKey: "settings.appearance_mode", defaultValue: "外观风格") }
     static var settingsFocusSearchOnLaunch: String { localizedString(forKey: "settings.focus_search_on_launch", defaultValue: "启动时聚焦搜索框") }
     static var settingsEnableWheelPaging: String { localizedString(forKey: "settings.enable_wheel_paging", defaultValue: "启用滚轮翻页") }
@@ -41,6 +42,10 @@ enum LaunchDeckStrings {
     static var settingsResetDefaults: String { localizedString(forKey: "settings.reset_defaults", defaultValue: "恢复默认设置") }
     static var settingsLayoutPath: String { localizedString(forKey: "settings.layout_path", defaultValue: "布局文件") }
     static var settingsSessionPath: String { localizedString(forKey: "settings.session_path", defaultValue: "会话文件") }
+    static var settingsWindowDescription: String { localizedString(forKey: "settings.window.description", defaultValue: "以下设置会影响新建主窗口和下次启动时的默认布局。") }
+    static var settingsMinimumVisibleIcons: String { localizedString(forKey: "settings.minimum_visible_icons", defaultValue: "启动窗口最少可见图标数") }
+    static var settingsDefaultWindowVisibleArea: String { localizedString(forKey: "settings.default_window_visible_area", defaultValue: "启动窗口面积占比") }
+    static var settingsStartupWindowTopInset: String { localizedString(forKey: "settings.startup_window_top_inset", defaultValue: "启动窗口顶部间距") }
     static var settingsDiagnosticsDescription: String { localizedString(forKey: "settings.diagnostics.description", defaultValue: "导出当前布局、偏好、会话与运行摘要，便于排障。") }
     static var diagnosticsFileName: String { localizedString(forKey: "diagnostics.file_name", defaultValue: "LaunchDeck-Diagnostics.json") }
     static var diagnosticsExportAction: String { localizedString(forKey: "diagnostics.export.action", defaultValue: "导出诊断报告") }

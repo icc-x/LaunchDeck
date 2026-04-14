@@ -2,11 +2,6 @@ import SwiftUI
 
 @main
 struct LaunchDeckApp: App {
-    private enum WindowLayout {
-        static let minimumVisibleIcons = 30
-        static let minimumSize = AppGridPageView.minimumWindowSize(for: minimumVisibleIcons)
-    }
-
     @Environment(\.scenePhase) private var scenePhase
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var preferences: LauncherPreferences
@@ -18,11 +13,18 @@ struct LaunchDeckApp: App {
         _store = StateObject(wrappedValue: LauncherStore(preferences: preferences))
     }
 
+    private var minimumWindowSize: CGSize {
+        AppGridPageView.minimumWindowSize(for: preferences.minimumVisibleIcons)
+    }
+
     var body: some Scene {
         WindowGroup(LaunchDeckStrings.windowTitle, id: "main") {
             ContentView(store: store, preferences: preferences)
-                .frame(minWidth: WindowLayout.minimumSize.width, minHeight: WindowLayout.minimumSize.height)
+                .frame(minWidth: minimumWindowSize.width, minHeight: minimumWindowSize.height)
                 .preferredColorScheme(preferences.appearanceMode.preferredColorScheme)
+                .onAppear {
+                    appDelegate.updateMainWindowMinimumSize()
+                }
                 .task {
                     appDelegate.onWillTerminate = { [store] in
                         await store.flushPendingPersistence()
@@ -40,9 +42,12 @@ struct LaunchDeckApp: App {
                         }
                     }
                 }
+                .onChange(of: preferences.minimumVisibleIcons) { _, _ in
+                    appDelegate.updateMainWindowMinimumSize()
+                }
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: WindowLayout.minimumSize.width, height: WindowLayout.minimumSize.height)
+        .defaultSize(width: minimumWindowSize.width, height: minimumWindowSize.height)
         .commands {
             LaunchDeckCommands(
                 onReload: {

@@ -3,7 +3,6 @@ import os
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private enum InitialWindowLayout {
-        static let targetVisibleAreaRatio: CGFloat = 0.40
         static let widthHeightRatio: CGFloat = 1.618033988749895
     }
 
@@ -60,15 +59,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     private func configure(window: NSWindow) {
-        if window.identifier == WindowIdentifier.settings {
+        if isSettingsWindow(window) {
             configureSettingsWindow(window)
         } else {
             configureMainWindow(window)
-        }
-
-        let windowID = ObjectIdentifier(window)
-        if initializedWindows.insert(windowID).inserted {
-            applyInitialWindowSize(window)
+            let windowID = ObjectIdentifier(window)
+            if initializedWindows.insert(windowID).inserted {
+                applyInitialWindowLayout(window)
+            }
         }
     }
 
@@ -78,10 +76,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.backgroundColor = .clear
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = false
+        updateMainWindowMinimumSize()
     }
 
     @MainActor
     private func configureSettingsWindow(_ window: NSWindow) {
+        window.identifier = WindowIdentifier.settings
         window.isOpaque = true
         window.backgroundColor = .windowBackgroundColor
         window.titlebarAppearsTransparent = false
@@ -89,12 +89,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor
-    private func applyInitialWindowSize(_ window: NSWindow) {
+    func updateMainWindowMinimumSize() {
+        let preferences = LauncherPreferences.resolvedSnapshot()
+        let size = AppGridPageView.minimumWindowSize(for: preferences.minimumVisibleIcons)
+        let minimumSize = NSSize(width: ceil(size.width), height: ceil(size.height))
+
+        for window in NSApp.windows where !isSettingsWindow(window) {
+            window.contentMinSize = minimumSize
+        }
+    }
+
+    @MainActor
+    private func applyInitialWindowLayout(_ window: NSWindow) {
+        let preferences = LauncherPreferences.resolvedSnapshot()
         let screenFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
         guard screenFrame.width > 0, screenFrame.height > 0 else { return }
 
+        let minimumWindowSize = AppGridPageView.minimumWindowSize(for: preferences.minimumVisibleIcons)
+        let minimumSize = NSSize(
+            width: ceil(max(minimumWindowSize.width, window.contentMinSize.width)),
+            height: ceil(max(minimumWindowSize.height, window.contentMinSize.height))
+        )
+        window.contentMinSize = minimumSize
+
         let screenArea = screenFrame.width * screenFrame.height
-        let targetArea = screenArea * InitialWindowLayout.targetVisibleAreaRatio
+        let targetArea = screenArea * preferences.defaultWindowVisibleAreaRatio
         var targetWidth = floor(sqrt(targetArea * InitialWindowLayout.widthHeightRatio))
         var targetHeight = floor(targetWidth / InitialWindowLayout.widthHeightRatio)
 
@@ -107,7 +126,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             targetWidth = floor(targetHeight * InitialWindowLayout.widthHeightRatio)
         }
 
-        let minimumSize = window.contentMinSize
         var finalWidth = max(targetWidth, minimumSize.width)
         var finalHeight = max(targetHeight, minimumSize.height)
 
@@ -124,10 +142,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let origin = NSPoint(
             x: screenFrame.midX - finalSize.width * 0.5,
-            y: screenFrame.midY - finalSize.height * 0.5
+            y: max(screenFrame.minY, screenFrame.maxY - CGFloat(preferences.startupWindowTopInset) - finalSize.height)
         )
         let frame = NSRect(origin: origin, size: finalSize)
         window.setFrame(frame, display: true)
+    }
+
+    @MainActor
+    private func isSettingsWindow(_ window: NSWindow) -> Bool {
+        window.identifier == WindowIdentifier.settings || window.title == LaunchDeckStrings.settingsTitle
     }
 
     @MainActor

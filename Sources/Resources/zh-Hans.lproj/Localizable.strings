@@ -25,6 +25,7 @@
 "settings.section.session" = "恢复与存储";
 "settings.section.diagnostics" = "诊断";
 "settings.section.appearance" = "显示";
+"settings.section.window" = "窗口";
 "settings.appearance_mode" = "外观风格";
 "settings.focus_search_on_launch" = "启动时聚焦搜索框";
 "settings.enable_wheel_paging" = "启用滚轮翻页";
@@ -37,6 +38,10 @@
 "settings.reset_defaults" = "恢复默认设置";
 "settings.layout_path" = "布局文件";
 "settings.session_path" = "会话文件";
+"settings.window.description" = "以下设置会影响新建主窗口和下次启动时的默认布局。";
+"settings.minimum_visible_icons" = "启动窗口最少可见图标数";
+"settings.default_window_visible_area" = "启动窗口面积占比";
+"settings.startup_window_top_inset" = "启动窗口顶部间距";
 "settings.diagnostics.description" = "导出当前布局、偏好、会话与运行摘要，便于排障。";
 "diagnostics.file_name" = "LaunchDeck-Diagnostics.json";
 "diagnostics.export.action" = "导出诊断报告";

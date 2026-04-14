@@ -30,6 +30,44 @@ struct SettingsView: View {
                     }
                 }
 
+                Section(LaunchDeckStrings.settingsWindowSection) {
+                    Text(LaunchDeckStrings.settingsWindowDescription)
+                        .foregroundStyle(.secondary)
+
+                    Stepper(
+                        value: $preferences.defaultWindowVisibleAreaPercent,
+                        in: 20...70,
+                        step: 5
+                    ) {
+                        LabeledContent(
+                            LaunchDeckStrings.settingsDefaultWindowVisibleArea,
+                            value: "\(preferences.defaultWindowVisibleAreaPercent)%"
+                        )
+                    }
+
+                    Stepper(
+                        value: $preferences.minimumVisibleIcons,
+                        in: 12...72,
+                        step: 6
+                    ) {
+                        LabeledContent(
+                            LaunchDeckStrings.settingsMinimumVisibleIcons,
+                            value: "\(preferences.minimumVisibleIcons)"
+                        )
+                    }
+
+                    Stepper(
+                        value: $preferences.startupWindowTopInset,
+                        in: 24...240,
+                        step: 8
+                    ) {
+                        LabeledContent(
+                            LaunchDeckStrings.settingsStartupWindowTopInset,
+                            value: "\(preferences.startupWindowTopInset)"
+                        )
+                    }
+                }
+
                 Section(LaunchDeckStrings.settingsAppearanceSection) {
                     Picker(LaunchDeckStrings.settingsAppearanceMode, selection: $preferences.appearanceMode) {
                         ForEach(LauncherAppearanceMode.allCases) { mode in

@@ -39,6 +39,9 @@ struct LauncherPreferencesSnapshot: Codable, Equatable, Sendable {
     var showStatusDetails: Bool
     var prefetchPageDepth: Int
     var folderPageSize: Int
+    var minimumVisibleIcons: Int
+    var defaultWindowVisibleAreaPercent: Int
+    var startupWindowTopInset: Int
 
     static let defaults = LauncherPreferencesSnapshot(
         appearanceMode: .system,
@@ -47,13 +50,20 @@ struct LauncherPreferencesSnapshot: Codable, Equatable, Sendable {
         restoreLastSession: true,
         showStatusDetails: true,
         prefetchPageDepth: 0,
-        folderPageSize: 18
+        folderPageSize: 18,
+        minimumVisibleIcons: 30,
+        defaultWindowVisibleAreaPercent: 40,
+        startupWindowTopInset: 96
     )
+
+    var defaultWindowVisibleAreaRatio: CGFloat {
+        CGFloat(defaultWindowVisibleAreaPercent) / 100
+    }
 }
 
 @MainActor
 final class LauncherPreferences: ObservableObject {
-    private enum Key {
+    enum Key {
         static let appearanceMode = "preferences.appearanceMode"
         static let focusSearchOnLaunch = "preferences.focusSearchOnLaunch"
         static let enableWheelPaging = "preferences.enableWheelPaging"
@@ -61,6 +71,9 @@ final class LauncherPreferences: ObservableObject {
         static let showStatusDetails = "preferences.showStatusDetails"
         static let prefetchPageDepth = "preferences.prefetchPageDepth"
         static let folderPageSize = "preferences.folderPageSize"
+        static let minimumVisibleIcons = "preferences.minimumVisibleIcons"
+        static let defaultWindowVisibleAreaPercent = "preferences.defaultWindowVisibleAreaPercent"
+        static let startupWindowTopInset = "preferences.startupWindowTopInset"
     }
 
     private let userDefaults: UserDefaults
@@ -100,18 +113,50 @@ final class LauncherPreferences: ObservableObject {
             persist(key: Key.folderPageSize, value: normalized)
         }
     }
+    @Published var minimumVisibleIcons: Int {
+        didSet {
+            let normalized = Self.normalizedMinimumVisibleIcons(minimumVisibleIcons)
+            if normalized != minimumVisibleIcons {
+                minimumVisibleIcons = normalized
+                return
+            }
+            persist(key: Key.minimumVisibleIcons, value: normalized)
+        }
+    }
+    @Published var defaultWindowVisibleAreaPercent: Int {
+        didSet {
+            let normalized = Self.normalizedDefaultWindowVisibleAreaPercent(defaultWindowVisibleAreaPercent)
+            if normalized != defaultWindowVisibleAreaPercent {
+                defaultWindowVisibleAreaPercent = normalized
+                return
+            }
+            persist(key: Key.defaultWindowVisibleAreaPercent, value: normalized)
+        }
+    }
+    @Published var startupWindowTopInset: Int {
+        didSet {
+            let normalized = Self.normalizedStartupWindowTopInset(startupWindowTopInset)
+            if normalized != startupWindowTopInset {
+                startupWindowTopInset = normalized
+                return
+            }
+            persist(key: Key.startupWindowTopInset, value: normalized)
+        }
+    }
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
-        appearanceMode = LauncherAppearanceMode(rawValue: userDefaults.string(forKey: Key.appearanceMode) ?? "") ?? .system
-        focusSearchOnLaunch = userDefaults.object(forKey: Key.focusSearchOnLaunch) as? Bool ?? LauncherPreferencesSnapshot.defaults.focusSearchOnLaunch
-        enableWheelPaging = userDefaults.object(forKey: Key.enableWheelPaging) as? Bool ?? true
-        restoreLastSession = userDefaults.object(forKey: Key.restoreLastSession) as? Bool ?? true
-        showStatusDetails = userDefaults.object(forKey: Key.showStatusDetails) as? Bool ?? true
-        prefetchPageDepth = Self.normalizedPrefetchPageDepth(
-            userDefaults.object(forKey: Key.prefetchPageDepth) as? Int ?? LauncherPreferencesSnapshot.defaults.prefetchPageDepth
-        )
-        folderPageSize = Self.normalizedFolderPageSize(userDefaults.object(forKey: Key.folderPageSize) as? Int ?? 18)
+        let resolved = Self.resolvedSnapshot(userDefaults: userDefaults)
+        appearanceMode = resolved.appearanceMode
+        focusSearchOnLaunch = resolved.focusSearchOnLaunch
+        enableWheelPaging = resolved.enableWheelPaging
+        restoreLastSession = resolved.restoreLastSession
+        showStatusDetails = resolved.showStatusDetails
+        prefetchPageDepth = resolved.prefetchPageDepth
+        folderPageSize = resolved.folderPageSize
+        minimumVisibleIcons = resolved.minimumVisibleIcons
+        defaultWindowVisibleAreaPercent = resolved.defaultWindowVisibleAreaPercent
+        startupWindowTopInset = resolved.startupWindowTopInset
     }
 
     var snapshot: LauncherPreferencesSnapshot {
@@ -122,7 +167,10 @@ final class LauncherPreferences: ObservableObject {
             restoreLastSession: restoreLastSession,
             showStatusDetails: showStatusDetails,
             prefetchPageDepth: prefetchPageDepth,
-            folderPageSize: folderPageSize
+            folderPageSize: folderPageSize,
+            minimumVisibleIcons: minimumVisibleIcons,
+            defaultWindowVisibleAreaPercent: defaultWindowVisibleAreaPercent,
+            startupWindowTopInset: startupWindowTopInset
         )
     }
 
@@ -138,17 +186,57 @@ final class LauncherPreferences: ObservableObject {
         showStatusDetails = LauncherPreferencesSnapshot.defaults.showStatusDetails
         prefetchPageDepth = LauncherPreferencesSnapshot.defaults.prefetchPageDepth
         folderPageSize = LauncherPreferencesSnapshot.defaults.folderPageSize
+        minimumVisibleIcons = LauncherPreferencesSnapshot.defaults.minimumVisibleIcons
+        defaultWindowVisibleAreaPercent = LauncherPreferencesSnapshot.defaults.defaultWindowVisibleAreaPercent
+        startupWindowTopInset = LauncherPreferencesSnapshot.defaults.startupWindowTopInset
+    }
+
+    static func resolvedSnapshot(userDefaults: UserDefaults = .standard) -> LauncherPreferencesSnapshot {
+        LauncherPreferencesSnapshot(
+            appearanceMode: LauncherAppearanceMode(rawValue: userDefaults.string(forKey: Key.appearanceMode) ?? "") ?? .system,
+            focusSearchOnLaunch: userDefaults.object(forKey: Key.focusSearchOnLaunch) as? Bool ?? LauncherPreferencesSnapshot.defaults.focusSearchOnLaunch,
+            enableWheelPaging: userDefaults.object(forKey: Key.enableWheelPaging) as? Bool ?? LauncherPreferencesSnapshot.defaults.enableWheelPaging,
+            restoreLastSession: userDefaults.object(forKey: Key.restoreLastSession) as? Bool ?? LauncherPreferencesSnapshot.defaults.restoreLastSession,
+            showStatusDetails: userDefaults.object(forKey: Key.showStatusDetails) as? Bool ?? LauncherPreferencesSnapshot.defaults.showStatusDetails,
+            prefetchPageDepth: normalizedPrefetchPageDepth(
+                userDefaults.object(forKey: Key.prefetchPageDepth) as? Int ?? LauncherPreferencesSnapshot.defaults.prefetchPageDepth
+            ),
+            folderPageSize: normalizedFolderPageSize(
+                userDefaults.object(forKey: Key.folderPageSize) as? Int ?? LauncherPreferencesSnapshot.defaults.folderPageSize
+            ),
+            minimumVisibleIcons: normalizedMinimumVisibleIcons(
+                userDefaults.object(forKey: Key.minimumVisibleIcons) as? Int ?? LauncherPreferencesSnapshot.defaults.minimumVisibleIcons
+            ),
+            defaultWindowVisibleAreaPercent: normalizedDefaultWindowVisibleAreaPercent(
+                userDefaults.object(forKey: Key.defaultWindowVisibleAreaPercent) as? Int ?? LauncherPreferencesSnapshot.defaults.defaultWindowVisibleAreaPercent
+            ),
+            startupWindowTopInset: normalizedStartupWindowTopInset(
+                userDefaults.object(forKey: Key.startupWindowTopInset) as? Int ?? LauncherPreferencesSnapshot.defaults.startupWindowTopInset
+            )
+        )
     }
 
     private func persist(key: String, value: Any) {
         userDefaults.set(value, forKey: key)
     }
 
-    private static func normalizedPrefetchPageDepth(_ value: Int) -> Int {
+    static func normalizedPrefetchPageDepth(_ value: Int) -> Int {
         max(0, min(value, 3))
     }
 
-    private static func normalizedFolderPageSize(_ value: Int) -> Int {
+    static func normalizedFolderPageSize(_ value: Int) -> Int {
         max(9, min(value, 30))
+    }
+
+    static func normalizedMinimumVisibleIcons(_ value: Int) -> Int {
+        max(12, min(value, 72))
+    }
+
+    static func normalizedDefaultWindowVisibleAreaPercent(_ value: Int) -> Int {
+        max(20, min(value, 70))
+    }
+
+    static func normalizedStartupWindowTopInset(_ value: Int) -> Int {
+        max(24, min(value, 240))
     }
 }
