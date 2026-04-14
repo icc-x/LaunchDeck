@@ -9,12 +9,10 @@ struct LauncherTileView: View {
     let iconProvider: AppIconProvider
     let folderPreviewIconProvider: AppIconProvider
     let isSearchMode: Bool
-    let isEditing: Bool
     let namespace: Namespace.ID
     let onLaunch: (AppItem) -> Void
     let onOpenFolder: (FolderItem) -> Void
     let onBeginDragging: (LauncherEntry) -> Void
-    let onEnterEditMode: () -> Void
     let onDrop: (LauncherEntry, CGPoint, CGSize) -> Void
     @Environment(\.colorScheme) private var colorScheme
 
@@ -103,7 +101,6 @@ struct LauncherTileView: View {
         .help(entry.displayName)
         .accessibilityLabel(entry.displayName)
         .onTapGesture {
-            guard !isEditing else { return }
             handleTap()
         }
         .onHover { hovering in
@@ -126,12 +123,6 @@ struct LauncherTileView: View {
                 return NSItemProvider(object: entry.id as NSString)
             }
         }
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.42).onEnded { _ in
-                guard !isSearchMode else { return }
-                onEnterEditMode()
-            }
-        )
         .onDrop(
             of: [UTType.text],
             delegate: TileDropDelegate(
@@ -141,9 +132,6 @@ struct LauncherTileView: View {
                 onDrop: onDrop
             )
         )
-        .conditionalModifier(isEditing) { view in
-            view.modifier(WiggleModifier(isActive: true, seed: entry.id))
-        }
     }
 
     private var observedIconIDs: [String] {
@@ -185,6 +173,7 @@ struct LauncherTileView: View {
                 ForEach(Array(folder.apps.prefix(4).enumerated()), id: \.offset) { _, app in
                     Image(nsImage: folderPreviewIconProvider.icon(for: app))
                         .resizable()
+                        .interpolation(.high)
                         .frame(width: metrics.miniIconSize, height: metrics.miniIconSize)
                         .clipShape(RoundedRectangle(cornerRadius: metrics.miniIconCornerRadius, style: .continuous))
                 }

@@ -2,10 +2,8 @@ import SwiftUI
 
 struct LauncherHeaderBar: View {
     @Binding var query: String
-    let isEditing: Bool
     let controlForeground: Color
     let refreshHint: String
-    let onFinishEditing: () -> Void
     let onOpenSettings: () -> Void
     let onReload: () -> Void
     let searchFocused: FocusState<Bool>.Binding
@@ -24,13 +22,6 @@ struct LauncherHeaderBar: View {
                 .frame(maxWidth: 540)
 
             Spacer(minLength: 0)
-
-            if isEditing {
-                Button(LaunchDeckStrings.done, action: onFinishEditing)
-                    .buttonStyle(.borderedProminent)
-                    .tint(.primary.opacity(0.14))
-                    .foregroundStyle(controlForeground)
-            }
 
             Button(action: onOpenSettings) {
                 Image(systemName: "gearshape")

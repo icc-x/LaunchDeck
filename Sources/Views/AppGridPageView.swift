@@ -4,14 +4,12 @@ import UniformTypeIdentifiers
 struct AppGridPageView: View {
     let entries: ArraySlice<LauncherEntry>
     let isSearchMode: Bool
-    let isEditing: Bool
     let iconProvider: AppIconProvider
     let folderPreviewIconProvider: AppIconProvider
     let namespace: Namespace.ID
     let onLaunch: (AppItem) -> Void
     let onOpenFolder: (FolderItem) -> Void
     let onBeginDragging: (LauncherEntry) -> Void
-    let onEnterEditMode: () -> Void
     let onDropOnEntry: (LauncherEntry, CGPoint, CGSize) -> Void
     let onDropToPageEnd: () -> Void
     let onPageCapacityChange: (Int) -> Void
@@ -91,12 +89,10 @@ struct AppGridPageView: View {
                         iconProvider: iconProvider,
                         folderPreviewIconProvider: folderPreviewIconProvider,
                         isSearchMode: isSearchMode,
-                        isEditing: isEditing,
                         namespace: namespace,
                         onLaunch: onLaunch,
                         onOpenFolder: onOpenFolder,
                         onBeginDragging: onBeginDragging,
-                        onEnterEditMode: onEnterEditMode,
                         onDrop: onDropOnEntry
                     )
                 }

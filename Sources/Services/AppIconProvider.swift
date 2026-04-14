@@ -36,11 +36,7 @@ final class AppIconProvider {
     private var loadingTask: Task<Void, Never>?
 
     private lazy var placeholderIcon: NSImage = {
-        if let image = NSImage(systemSymbolName: "app.fill", accessibilityDescription: nil) {
-            image.size = iconSize
-            return image
-        }
-        return NSImage(size: iconSize)
+        makePlaceholderIcon()
     }()
 
     init(iconSize: NSSize = NSSize(width: 72, height: 72)) {
@@ -230,6 +226,45 @@ final class AppIconProvider {
         let rasterizedImage = NSImage(size: iconSize)
         rasterizedImage.addRepresentation(representation)
         return PreparedIcon(image: rasterizedImage, cost: cost)
+    }
+
+    private func makePlaceholderIcon() -> NSImage {
+        let outerInset = min(iconSize.width, iconSize.height) * 0.08
+        let innerInset = min(iconSize.width, iconSize.height) * 0.24
+        let cornerRadius = min(iconSize.width, iconSize.height) * 0.18
+        let image = NSImage(size: iconSize, flipped: false) { [iconSize] rect in
+            NSColor(calibratedWhite: 0.78, alpha: 1).setFill()
+            NSBezierPath(
+                roundedRect: rect.insetBy(dx: outerInset, dy: outerInset),
+                xRadius: cornerRadius,
+                yRadius: cornerRadius
+            ).fill()
+
+            NSColor(calibratedWhite: 0.92, alpha: 1).setFill()
+            NSBezierPath(
+                roundedRect: rect.insetBy(dx: innerInset, dy: innerInset),
+                xRadius: max(2, cornerRadius * 0.56),
+                yRadius: max(2, cornerRadius * 0.56)
+            ).fill()
+
+            NSColor(calibratedWhite: 1, alpha: 0.18).setStroke()
+            let highlightRect = NSRect(
+                x: outerInset + max(1, iconSize.width * 0.08),
+                y: rect.maxY - outerInset - max(2, iconSize.height * 0.22),
+                width: max(2, rect.width - (outerInset * 2 + iconSize.width * 0.16)),
+                height: max(1.5, iconSize.height * 0.08)
+            )
+            let highlight = NSBezierPath(
+                roundedRect: highlightRect,
+                xRadius: highlightRect.height * 0.5,
+                yRadius: highlightRect.height * 0.5
+            )
+            highlight.lineWidth = 1
+            highlight.stroke()
+            return true
+        }
+        image.isTemplate = false
+        return image
     }
 
     nonisolated private static func maximumBackingScaleFactor() -> CGFloat {

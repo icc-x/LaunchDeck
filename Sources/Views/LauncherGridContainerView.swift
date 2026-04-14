@@ -5,7 +5,6 @@ import UniformTypeIdentifiers
 struct LauncherGridContainerView: View {
     let entries: ArraySlice<LauncherEntry>
     let isSearchMode: Bool
-    let isEditing: Bool
     let currentPage: Int
     let pageCount: Int
     let transitionDirection: Int
@@ -17,7 +16,6 @@ struct LauncherGridContainerView: View {
     let onLaunch: (AppItem) -> Void
     let onOpenFolder: (FolderItem) -> Void
     let onBeginDragging: (LauncherEntry) -> Void
-    let onEnterEditMode: () -> Void
     let onDropOnEntry: (LauncherEntry, CGPoint, CGSize) -> Void
     let onDropToPageEnd: () -> Void
     let onPageCapacityChange: (Int) -> Void
@@ -31,14 +29,12 @@ struct LauncherGridContainerView: View {
             AppGridPageView(
                 entries: entries,
                 isSearchMode: isSearchMode,
-                isEditing: isEditing,
                 iconProvider: iconProvider,
                 folderPreviewIconProvider: folderPreviewIconProvider,
                 namespace: namespace,
                 onLaunch: onLaunch,
                 onOpenFolder: onOpenFolder,
                 onBeginDragging: onBeginDragging,
-                onEnterEditMode: onEnterEditMode,
                 onDropOnEntry: onDropOnEntry,
                 onDropToPageEnd: onDropToPageEnd,
                 onPageCapacityChange: onPageCapacityChange

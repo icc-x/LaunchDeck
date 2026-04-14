@@ -304,7 +304,6 @@ final class LauncherStore: ObservableObject {
 
     func beginDragging(_ entry: LauncherEntry) {
         guard queryKeyword.isEmpty else { return }
-        enterEditMode()
         activeFolder = nil
         draggingFolderAppID = nil
         draggingFolderID = nil
@@ -315,7 +314,6 @@ final class LauncherStore: ObservableObject {
 
     func beginFolderDragging(app: AppItem, folderID: String) {
         guard queryKeyword.isEmpty else { return }
-        enterEditMode()
         draggingEntryID = nil
         draggingFolderID = folderID
         draggingFolderAppID = app.id
@@ -358,7 +356,6 @@ final class LauncherStore: ObservableObject {
 
         if didChange {
             if let groupedFolder {
-                activeFolder = groupedFolder
                 if targetEntry.folderValue != nil {
                     publishActionStatus(LaunchDeckStrings.groupedIntoFolder(draggedName, folderName: groupedFolder.name))
                 } else {

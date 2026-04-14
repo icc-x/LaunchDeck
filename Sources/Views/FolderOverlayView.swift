@@ -6,7 +6,6 @@ import UniformTypeIdentifiers
 struct FolderOverlayView: View {
     let folder: FolderItem
     let apps: [AppItem]
-    let isEditing: Bool
     let isDraggingFolderApp: Bool
     let folderPageSize: Int
     let wheelPagingEnabled: Bool
@@ -17,7 +16,6 @@ struct FolderOverlayView: View {
     let onRename: (String) -> Void
     let onLaunch: (AppItem) -> Void
     let onBeginDragging: (AppItem) -> Void
-    let onEnterEditMode: () -> Void
     let onDropOnApp: (AppItem) -> Void
     let onDropToFolderPageBoundary: (Int, Int, Int) -> Void
     let onDropToFolderEnd: () -> Void
@@ -107,11 +105,9 @@ struct FolderOverlayView: View {
                         ForEach(visibleApps) { app in
                             FolderAppButton(
                                 app: app,
-                                isEditing: isEditing,
                                 iconProvider: iconProvider,
                                 action: { onLaunch(app) },
                                 onBeginDragging: { onBeginDragging(app) },
-                                onEnterEditMode: onEnterEditMode,
                                 onDropOnApp: { onDropOnApp(app) }
                             )
                         }
@@ -204,6 +200,7 @@ struct FolderOverlayView: View {
                 ForEach(Array(apps.prefix(4).enumerated()), id: \.offset) { _, app in
                     Image(nsImage: folderPreviewIconProvider.icon(for: app))
                         .resizable()
+                        .interpolation(.high)
                         .frame(width: 16, height: 16)
                         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 }
@@ -343,11 +340,9 @@ struct FolderOverlayView: View {
 
 private struct FolderAppButton: View {
     let app: AppItem
-    let isEditing: Bool
     let iconProvider: AppIconProvider
     let action: () -> Void
     let onBeginDragging: () -> Void
-    let onEnterEditMode: () -> Void
     let onDropOnApp: () -> Void
     @Environment(\.colorScheme) private var colorScheme
 
@@ -365,6 +360,7 @@ private struct FolderAppButton: View {
         VStack(spacing: 8) {
             Image(nsImage: iconProvider.icon(for: app))
                 .resizable()
+                .interpolation(.high)
                 .frame(width: 70, height: 70)
 
             Text(app.name)
@@ -399,25 +395,16 @@ private struct FolderAppButton: View {
         .help(app.name)
         .accessibilityLabel(app.name)
         .onTapGesture {
-            guard !isEditing else { return }
             action()
         }
         .onDrag {
             onBeginDragging()
             return NSItemProvider(object: "folder:\(app.id)" as NSString)
         }
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.42).onEnded { _ in
-                onEnterEditMode()
-            }
-        )
         .onDrop(of: [UTType.text], delegate: FolderAppDropDelegate(
             isDropTargeted: $isDropTargeted,
             onDropOnApp: onDropOnApp
         ))
-        .conditionalModifier(isEditing) { view in
-            view.modifier(WiggleModifier(isActive: true, seed: app.id))
-        }
     }
 }
 

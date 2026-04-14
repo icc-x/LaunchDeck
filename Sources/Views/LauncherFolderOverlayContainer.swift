@@ -4,7 +4,6 @@ import UniformTypeIdentifiers
 struct LauncherFolderOverlayContainer: View {
     let folder: FolderItem
     let apps: [AppItem]
-    let isEditing: Bool
     let isDraggingFolderApp: Bool
     let folderPageSize: Int
     let wheelPagingEnabled: Bool
@@ -16,7 +15,6 @@ struct LauncherFolderOverlayContainer: View {
     let onRename: (String) -> Void
     let onLaunch: (AppItem) -> Void
     let onBeginDragging: (AppItem) -> Void
-    let onEnterEditMode: () -> Void
     let onDropOnApp: (AppItem) -> Void
     let onDropToFolderPageBoundary: (Int, Int, Int) -> Void
     let onDropToFolderEnd: () -> Void
@@ -51,7 +49,6 @@ struct LauncherFolderOverlayContainer: View {
             FolderOverlayView(
                 folder: folder,
                 apps: apps,
-                isEditing: isEditing,
                 isDraggingFolderApp: isDraggingFolderApp,
                 folderPageSize: folderPageSize,
                 wheelPagingEnabled: wheelPagingEnabled,
@@ -62,7 +59,6 @@ struct LauncherFolderOverlayContainer: View {
                 onRename: onRename,
                 onLaunch: onLaunch,
                 onBeginDragging: onBeginDragging,
-                onEnterEditMode: onEnterEditMode,
                 onDropOnApp: onDropOnApp,
                 onDropToFolderPageBoundary: onDropToFolderPageBoundary,
                 onDropToFolderEnd: onDropToFolderEnd

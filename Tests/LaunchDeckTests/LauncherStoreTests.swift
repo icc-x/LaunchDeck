@@ -96,6 +96,33 @@ final class LauncherStoreTests: XCTestCase {
         XCTAssertEqual(sessionPersistence.load()?.currentPage, 1)
     }
 
+    func testGroupingDropKeepsFolderClosed() async {
+        let safari = app("Safari", path: "/Applications/Safari.app")
+        let terminal = app("Terminal", path: "/System/Applications/Utilities/Terminal.app")
+        let preferences = LauncherPreferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let store = LauncherStore(
+            preferences: preferences,
+            catalogClient: LauncherCatalogClient(
+                loadApplications: { [safari, terminal] },
+                enrichApplications: { $0 }
+            ),
+            appLauncher: .noop,
+            autoReload: false
+        )
+
+        await store.reload()
+        store.beginDragging(.app(terminal))
+        store.handleDrop(
+            on: .app(safari),
+            location: CGPoint(x: 52, y: 48),
+            tileSize: CGSize(width: 104, height: 118)
+        )
+
+        XCTAssertNil(store.activeFolder)
+        XCTAssertEqual(store.rootEntries.count, 1)
+        XCTAssertEqual(store.rootEntries.first?.folderValue?.apps.map(\.id), [safari.id, terminal.id])
+    }
+
     func testEnablingRestoreLastSessionAppliesPersistedSessionImmediately() async throws {
         let fileManager = FileManager.default
         let directory = makeTemporaryDirectory(fileManager: fileManager)

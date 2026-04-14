@@ -34,12 +34,8 @@ struct ContentView: View {
                 VStack(spacing: Layout.mainStackSpacing) {
                     LauncherHeaderBar(
                         query: $store.query,
-                        isEditing: store.isEditing,
                         controlForeground: theme.controlForeground,
                         refreshHint: LaunchDeckStrings.refreshApps,
-                        onFinishEditing: {
-                            store.exitEditMode()
-                        },
                         onOpenSettings: {
                             openWindow(id: "settings")
                         },
@@ -84,7 +80,6 @@ struct ContentView: View {
                     LauncherFolderOverlayContainer(
                         folder: folder,
                         apps: store.folderApps(in: folder),
-                        isEditing: store.isEditing,
                         isDraggingFolderApp: store.draggingFolderAppID != nil,
                         folderPageSize: preferences.folderPageSize,
                         wheelPagingEnabled: preferences.enableWheelPaging,
@@ -105,9 +100,6 @@ struct ContentView: View {
                         },
                         onBeginDragging: { app in
                             store.beginFolderDragging(app: app, folderID: folder.id)
-                        },
-                        onEnterEditMode: {
-                            store.enterEditMode()
                         },
                         onDropOnApp: { app in
                             store.handleFolderDrop(on: app, folderID: folder.id)
@@ -192,7 +184,6 @@ struct ContentView: View {
             LauncherGridContainerView(
                 entries: store.pages[store.currentPage],
                 isSearchMode: isSearchMode,
-                isEditing: store.isEditing,
                 currentPage: store.currentPage,
                 pageCount: store.pages.count,
                 transitionDirection: store.pageTransitionDirection,
@@ -211,9 +202,6 @@ struct ContentView: View {
                 },
                 onBeginDragging: { entry in
                     store.beginDragging(entry)
-                },
-                onEnterEditMode: {
-                    store.enterEditMode()
                 },
                 onDropOnEntry: { entry, location, size in
                     store.handleDrop(on: entry, location: location, tileSize: size)
