@@ -31,8 +31,36 @@ struct LaunchTheme {
         isDark ? .white.opacity(0.24) : .black.opacity(0.18)
     }
 
+    var controlFill: Color {
+        if isDark {
+            return Color.white.opacity(0.10)
+        }
+        return Color.white.opacity(0.78)
+    }
+
+    var controlFillStrong: Color {
+        if isDark {
+            return Color.white.opacity(0.14)
+        }
+        return Color.white.opacity(0.88)
+    }
+
     var cardStroke: Color {
         isDark ? .white.opacity(0.24) : .black.opacity(0.14)
+    }
+
+    var panelFill: Color {
+        if isDark {
+            return Color(red: 0.10, green: 0.11, blue: 0.14).opacity(0.94)
+        }
+        return Color(red: 0.96, green: 0.97, blue: 0.99).opacity(0.92)
+    }
+
+    var folderCardFill: Color {
+        if isDark {
+            return Color.white.opacity(0.08)
+        }
+        return Color.white.opacity(0.76)
     }
 
     var dropStroke: Color {
@@ -65,6 +93,34 @@ struct LaunchTheme {
 
     var searchFieldStroke: Color {
         isDark ? .white.opacity(0.24) : .black.opacity(0.16)
+    }
+
+    var backdropBase: [Color] {
+        if isDark {
+            return [
+                Color(red: 0.07, green: 0.08, blue: 0.10),
+                Color(red: 0.10, green: 0.11, blue: 0.14),
+                Color(red: 0.08, green: 0.09, blue: 0.12)
+            ]
+        }
+        return [
+            Color(red: 0.97, green: 0.98, blue: 0.995),
+            Color(red: 0.93, green: 0.95, blue: 0.98),
+            Color(red: 0.90, green: 0.93, blue: 0.97)
+        ]
+    }
+
+    var backdropGlow: [Color] {
+        if isDark {
+            return [
+                Color.white.opacity(0.07),
+                Color.clear
+            ]
+        }
+        return [
+            Color.white.opacity(0.24),
+            Color.clear
+        ]
     }
 
     var backdropTint: [Color] {

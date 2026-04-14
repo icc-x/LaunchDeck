@@ -32,7 +32,7 @@ struct SearchField: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(.regularMaterial, in: Capsule())
+        .background(theme.controlFill, in: Capsule())
         .overlay(
             Capsule().stroke(theme.searchFieldStroke, lineWidth: 1)
         )

@@ -41,7 +41,7 @@ struct LauncherFolderOverlayContainer: View {
                     .foregroundStyle(theme.controlForeground)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .background(theme.controlFillStrong, in: Capsule())
                     .overlay(Capsule().stroke(theme.dragHintStroke, lineWidth: 1))
                     .padding(.top, 28)
                     .frame(maxHeight: .infinity, alignment: .top)

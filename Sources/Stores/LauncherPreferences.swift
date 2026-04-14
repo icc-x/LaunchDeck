@@ -42,7 +42,7 @@ struct LauncherPreferencesSnapshot: Codable, Equatable, Sendable {
 
     static let defaults = LauncherPreferencesSnapshot(
         appearanceMode: .system,
-        focusSearchOnLaunch: true,
+        focusSearchOnLaunch: false,
         enableWheelPaging: true,
         restoreLastSession: true,
         showStatusDetails: true,
@@ -104,7 +104,7 @@ final class LauncherPreferences: ObservableObject {
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
         appearanceMode = LauncherAppearanceMode(rawValue: userDefaults.string(forKey: Key.appearanceMode) ?? "") ?? .system
-        focusSearchOnLaunch = userDefaults.object(forKey: Key.focusSearchOnLaunch) as? Bool ?? true
+        focusSearchOnLaunch = userDefaults.object(forKey: Key.focusSearchOnLaunch) as? Bool ?? LauncherPreferencesSnapshot.defaults.focusSearchOnLaunch
         enableWheelPaging = userDefaults.object(forKey: Key.enableWheelPaging) as? Bool ?? true
         restoreLastSession = userDefaults.object(forKey: Key.restoreLastSession) as? Bool ?? true
         showStatusDetails = userDefaults.object(forKey: Key.showStatusDetails) as? Bool ?? true

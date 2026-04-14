@@ -6,8 +6,14 @@ struct LauncherHeaderBar: View {
     let controlForeground: Color
     let refreshHint: String
     let onFinishEditing: () -> Void
+    let onOpenSettings: () -> Void
     let onReload: () -> Void
     let searchFocused: FocusState<Bool>.Binding
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var theme: LaunchTheme {
+        LaunchTheme(colorScheme: colorScheme)
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -26,12 +32,12 @@ struct LauncherHeaderBar: View {
                     .foregroundStyle(controlForeground)
             }
 
-            SettingsLink {
+            Button(action: onOpenSettings) {
                 Image(systemName: "gearshape")
                     .font(.title3)
                     .foregroundStyle(controlForeground)
                     .padding(10)
-                    .background(.thinMaterial, in: Circle())
+                    .background(theme.controlFill, in: Circle())
             }
             .buttonStyle(.plain)
             .help(LaunchDeckStrings.settingsTitle)
@@ -43,7 +49,7 @@ struct LauncherHeaderBar: View {
                     .font(.title3)
                     .foregroundStyle(controlForeground)
                     .padding(10)
-                    .background(.thinMaterial, in: Circle())
+                    .background(theme.controlFill, in: Circle())
             }
             .buttonStyle(.plain)
             .help(refreshHint)

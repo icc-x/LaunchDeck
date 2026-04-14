@@ -54,7 +54,7 @@ struct LaunchDeckApp: App {
             )
         }
 
-        Settings {
+        Window(LaunchDeckStrings.settingsTitle, id: "settings") {
             SettingsView(
                 preferences: preferences,
                 layoutStoragePath: store.layoutStoragePath,
@@ -72,5 +72,6 @@ struct LaunchDeckApp: App {
             )
             .preferredColorScheme(preferences.appearanceMode.preferredColorScheme)
         }
+        .defaultSize(width: 520, height: 420)
     }
 }

@@ -191,7 +191,7 @@ struct LauncherTileView: View {
             }
         }
         .frame(width: metrics.folderSurfaceSize, height: metrics.folderSurfaceSize)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: metrics.folderCornerRadius, style: .continuous))
+        .background(theme.folderCardFill, in: RoundedRectangle(cornerRadius: metrics.folderCornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: metrics.folderCornerRadius, style: .continuous)
                 .stroke(theme.cardStroke.opacity(isHovering ? 1 : 0.72), lineWidth: 1)

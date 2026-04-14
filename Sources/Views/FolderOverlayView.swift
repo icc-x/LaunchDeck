@@ -166,7 +166,7 @@ struct FolderOverlayView: View {
         .padding(.horizontal, 24)
         .padding(.vertical, 20)
         .frame(maxWidth: 860, maxHeight: 560)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .background(theme.panelFill, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 26, style: .continuous)
                 .stroke(theme.cardStroke, lineWidth: 1)
@@ -199,7 +199,7 @@ struct FolderOverlayView: View {
     private var folderBadge: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.thinMaterial)
+                .fill(theme.controlFill)
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(16), spacing: 3), count: 2), spacing: 3) {
                 ForEach(Array(apps.prefix(4).enumerated()), id: \.offset) { _, app in
                     Image(nsImage: folderPreviewIconProvider.icon(for: app))

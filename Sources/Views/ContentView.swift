@@ -13,6 +13,7 @@ struct ContentView: View {
     @ObservedObject var store: LauncherStore
     @ObservedObject var preferences: LauncherPreferences
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.scenePhase) private var scenePhase
     @State private var iconProvider = AppIconProvider()
     @State private var folderPreviewIconProvider = AppIconProvider(iconSize: NSSize(width: 28, height: 28))
@@ -38,6 +39,9 @@ struct ContentView: View {
                         refreshHint: LaunchDeckStrings.refreshApps,
                         onFinishEditing: {
                             store.exitEditMode()
+                        },
+                        onOpenSettings: {
+                            openWindow(id: "settings")
                         },
                         onReload: {
                             Task { await store.reload() }
@@ -315,7 +319,7 @@ struct ContentView: View {
             .foregroundStyle(theme.controlForeground)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(.ultraThinMaterial, in: Capsule())
+            .background(theme.controlFillStrong, in: Capsule())
             .overlay(
                 Capsule().stroke(theme.controlStroke, lineWidth: 1)
             )

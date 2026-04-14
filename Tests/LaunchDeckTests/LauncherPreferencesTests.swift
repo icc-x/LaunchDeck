@@ -8,7 +8,9 @@ final class LauncherPreferencesTests: XCTestCase {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         let preferences = LauncherPreferences(userDefaults: defaults)
 
+        XCTAssertFalse(preferences.focusSearchOnLaunch)
         XCTAssertEqual(preferences.prefetchPageDepth, 0)
+        XCTAssertFalse(preferences.snapshot.focusSearchOnLaunch)
         XCTAssertEqual(preferences.snapshot.prefetchPageDepth, 0)
     }
 

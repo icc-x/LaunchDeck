@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct LaunchpadBackdrop: View {
@@ -10,12 +9,19 @@ struct LaunchpadBackdrop: View {
 
     var body: some View {
         ZStack {
-            NativeMaterialBackdrop(
-                opacity: 0.97,
-                material: colorScheme == .dark ? .hudWindow : .underWindowBackground
+            LinearGradient(
+                colors: theme.backdropBase,
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
             )
 
-            // Keep a subtle neutral tint so cards stay readable on bright wallpapers.
+            RadialGradient(
+                colors: theme.backdropGlow,
+                center: .topTrailing,
+                startRadius: 24,
+                endRadius: 420
+            )
+
             LinearGradient(
                 colors: theme.backdropTint,
                 startPoint: .topLeading,
@@ -23,24 +29,5 @@ struct LaunchpadBackdrop: View {
             )
         }
         .ignoresSafeArea()
-    }
-}
-
-private struct NativeMaterialBackdrop: NSViewRepresentable {
-    let opacity: CGFloat
-    let material: NSVisualEffectView.Material
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.blendingMode = .behindWindow
-        view.state = .active
-        view.material = material
-        view.alphaValue = opacity
-        return view
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.material = material
-        nsView.alphaValue = opacity
     }
 }
