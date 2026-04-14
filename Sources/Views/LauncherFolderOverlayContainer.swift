@@ -5,6 +5,7 @@ struct LauncherFolderOverlayContainer: View {
     let folder: FolderItem
     let apps: [AppItem]
     let isDraggingFolderApp: Bool
+    let draggingFolderAppID: String?
     let folderPageSize: Int
     let wheelPagingEnabled: Bool
     let iconProvider: AppIconProvider
@@ -15,9 +16,8 @@ struct LauncherFolderOverlayContainer: View {
     let onRename: (String) -> Void
     let onLaunch: (AppItem) -> Void
     let onBeginDragging: (AppItem) -> Void
-    let onDropOnApp: (AppItem) -> Void
+    let onDropToInsertionIndex: (Int) -> Void
     let onDropToFolderPageBoundary: (Int, Int, Int) -> Void
-    let onDropToFolderEnd: () -> Void
     let onDropExtract: () -> Void
 
     var body: some View {
@@ -50,6 +50,7 @@ struct LauncherFolderOverlayContainer: View {
                 folder: folder,
                 apps: apps,
                 isDraggingFolderApp: isDraggingFolderApp,
+                draggingFolderAppID: draggingFolderAppID,
                 folderPageSize: folderPageSize,
                 wheelPagingEnabled: wheelPagingEnabled,
                 iconProvider: iconProvider,
@@ -59,9 +60,8 @@ struct LauncherFolderOverlayContainer: View {
                 onRename: onRename,
                 onLaunch: onLaunch,
                 onBeginDragging: onBeginDragging,
-                onDropOnApp: onDropOnApp,
+                onDropToInsertionIndex: onDropToInsertionIndex,
                 onDropToFolderPageBoundary: onDropToFolderPageBoundary,
-                onDropToFolderEnd: onDropToFolderEnd
             )
             .padding(.horizontal, 72)
             .padding(.vertical, 38)

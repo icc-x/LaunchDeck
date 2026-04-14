@@ -17,7 +17,7 @@ struct LauncherGridContainerView: View {
     let onOpenFolder: (FolderItem) -> Void
     let onBeginDragging: (LauncherEntry) -> Void
     let onDropOnEntry: (LauncherEntry, CGPoint, CGSize) -> Void
-    let onDropToPageEnd: () -> Void
+    let onDropToInsertionIndex: (Int) -> Void
     let onPageCapacityChange: (Int) -> Void
     let onPageEdgeHover: (Int) -> Void
     let onPageEdgeExit: () -> Void
@@ -29,6 +29,7 @@ struct LauncherGridContainerView: View {
             AppGridPageView(
                 entries: entries,
                 isSearchMode: isSearchMode,
+                draggingEntryID: draggingEntryID,
                 iconProvider: iconProvider,
                 folderPreviewIconProvider: folderPreviewIconProvider,
                 namespace: namespace,
@@ -36,7 +37,7 @@ struct LauncherGridContainerView: View {
                 onOpenFolder: onOpenFolder,
                 onBeginDragging: onBeginDragging,
                 onDropOnEntry: onDropOnEntry,
-                onDropToPageEnd: onDropToPageEnd,
+                onDropToInsertionIndex: onDropToInsertionIndex,
                 onPageCapacityChange: onPageCapacityChange
             )
             .id("page-\(currentPage)")

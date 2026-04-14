@@ -36,12 +36,17 @@ struct LauncherLayoutEditor {
     }
 
     @discardableResult
-    mutating func reorderRootEntry(draggedID: String, targetID: String) -> Bool {
+    mutating func reorderRootEntry(
+        draggedID: String,
+        targetID: String,
+        placeAfterTarget: Bool = false
+    ) -> Bool {
         guard let from = rootIndex(id: draggedID), let to = rootIndex(id: targetID), from != to else {
             return false
         }
 
-        moveRootEntry(from: from, to: to)
+        let targetIndex = placeAfterTarget ? to + 1 : to
+        moveRootEntry(from: from, to: targetIndex)
         return true
     }
 
@@ -49,6 +54,16 @@ struct LauncherLayoutEditor {
     mutating func moveRootEntry(id: String, to targetIndex: Int) -> Bool {
         guard let from = rootIndex(id: id) else { return false }
         moveRootEntry(from: from, to: targetIndex)
+        return true
+    }
+
+    @discardableResult
+    mutating func moveRootEntryToInsertionIndex(id: String, insertionIndex: Int) -> Bool {
+        guard let from = rootIndex(id: id) else { return false }
+
+        let entry = entries.remove(at: from)
+        let clamped = max(0, min(insertionIndex, entries.count))
+        entries.insert(entry, at: clamped)
         return true
     }
 
@@ -76,7 +91,12 @@ struct LauncherLayoutEditor {
         }
     }
 
-    mutating func reorderFolderApp(folderID: String, draggedAppID: String, targetAppID: String) -> FolderItem? {
+    mutating func reorderFolderApp(
+        folderID: String,
+        draggedAppID: String,
+        targetAppID: String,
+        placeAfterTarget: Bool = false
+    ) -> FolderItem? {
         mutateFolder(id: folderID) { folder in
             guard let from = folder.apps.firstIndex(where: { $0.id == draggedAppID }),
                   let to = folder.apps.firstIndex(where: { $0.id == targetAppID }),
@@ -85,7 +105,9 @@ struct LauncherLayoutEditor {
             }
 
             let app = folder.apps.remove(at: from)
-            let adjusted = from < to ? to - 1 : to
+            let rawTargetIndex = placeAfterTarget ? to + 1 : to
+            let clamped = max(0, min(rawTargetIndex, folder.apps.count))
+            let adjusted = from < clamped ? clamped - 1 : clamped
             folder.apps.insert(app, at: adjusted)
         }
     }
@@ -112,6 +134,35 @@ struct LauncherLayoutEditor {
             let pageEndExclusive = max(pageStart, min((currentPage + 1) * resolvedPageSize, total))
             let targetIndex = direction < 0 ? pageStart : pageEndExclusive
             let clamped = max(0, min(targetIndex, folder.apps.count))
+            folder.apps.insert(app, at: clamped)
+        }
+    }
+
+    mutating func moveFolderApp(
+        folderID: String,
+        draggedAppID: String,
+        to targetIndex: Int
+    ) -> FolderItem? {
+        mutateFolder(id: folderID) { folder in
+            guard let from = folder.apps.firstIndex(where: { $0.id == draggedAppID }) else { return }
+
+            let app = folder.apps.remove(at: from)
+            let clamped = max(0, min(targetIndex, folder.apps.count))
+            let adjusted = from < clamped ? clamped - 1 : clamped
+            folder.apps.insert(app, at: max(0, min(adjusted, folder.apps.count)))
+        }
+    }
+
+    mutating func moveFolderAppToInsertionIndex(
+        folderID: String,
+        draggedAppID: String,
+        insertionIndex: Int
+    ) -> FolderItem? {
+        mutateFolder(id: folderID) { folder in
+            guard let from = folder.apps.firstIndex(where: { $0.id == draggedAppID }) else { return }
+
+            let app = folder.apps.remove(at: from)
+            let clamped = max(0, min(insertionIndex, folder.apps.count))
             folder.apps.insert(app, at: clamped)
         }
     }

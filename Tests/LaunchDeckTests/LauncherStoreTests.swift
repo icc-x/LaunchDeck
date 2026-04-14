@@ -123,6 +123,37 @@ final class LauncherStoreTests: XCTestCase {
         XCTAssertEqual(store.rootEntries.first?.folderValue?.apps.map(\.id), [safari.id, terminal.id])
     }
 
+    func testDropOnRightHalfMovesDraggedEntryAfterTarget() async {
+        let safari = app("Safari", path: "/Applications/Safari.app")
+        let terminal = app("Terminal", path: "/System/Applications/Utilities/Terminal.app")
+        let xcode = app("Xcode", path: "/Applications/Xcode.app")
+        let preferences = LauncherPreferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let store = LauncherStore(
+            preferences: preferences,
+            catalogClient: LauncherCatalogClient(
+                loadApplications: { [safari, terminal, xcode] },
+                enrichApplications: { $0 }
+            ),
+            appLauncher: .noop,
+            autoReload: false
+        )
+
+        await store.reload()
+        let initialOrder = store.rootEntries.map(\.id)
+        XCTAssertEqual(Set(initialOrder), Set([safari.entryID, terminal.entryID, xcode.entryID]))
+
+        store.beginDragging(.app(safari))
+        store.handleDrop(
+            on: .app(terminal),
+            location: CGPoint(x: 100, y: 48),
+            tileSize: CGSize(width: 104, height: 118)
+        )
+
+        let updatedOrder = store.rootEntries.map(\.id)
+        XCTAssertEqual(updatedOrder.count, 3)
+        XCTAssertLessThan(updatedOrder.firstIndex(of: terminal.entryID) ?? .max, updatedOrder.firstIndex(of: safari.entryID) ?? .max)
+    }
+
     func testEnablingRestoreLastSessionAppliesPersistedSessionImmediately() async throws {
         let fileManager = FileManager.default
         let directory = makeTemporaryDirectory(fileManager: fileManager)

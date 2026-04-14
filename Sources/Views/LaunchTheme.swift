@@ -67,6 +67,33 @@ struct LaunchTheme {
         isDark ? .white.opacity(0.72) : .black.opacity(0.56)
     }
 
+    var placeholderFill: Color {
+        isDark ? Color.white.opacity(0.10) : Color.white.opacity(0.56)
+    }
+
+    var placeholderStroke: Color {
+        isDark ? Color.white.opacity(0.22) : Color.black.opacity(0.12)
+    }
+
+    var placeholderSecondaryFill: Color {
+        isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.05)
+    }
+
+    var dragPreviewFill: Color {
+        if isDark {
+            return Color(red: 0.12, green: 0.13, blue: 0.17).opacity(0.92)
+        }
+        return Color.white.opacity(0.96)
+    }
+
+    var dragPreviewStroke: Color {
+        isDark ? Color.white.opacity(0.18) : Color.black.opacity(0.10)
+    }
+
+    var dragPreviewShadow: Color {
+        .black.opacity(isDark ? 0.34 : 0.22)
+    }
+
     var pageIndicatorActive: Color {
         isDark ? .white : .black.opacity(0.84)
     }

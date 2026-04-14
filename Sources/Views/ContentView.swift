@@ -81,6 +81,7 @@ struct ContentView: View {
                         folder: folder,
                         apps: store.folderApps(in: folder),
                         isDraggingFolderApp: store.draggingFolderAppID != nil,
+                        draggingFolderAppID: store.draggingFolderAppID,
                         folderPageSize: preferences.folderPageSize,
                         wheelPagingEnabled: preferences.enableWheelPaging,
                         iconProvider: iconProvider,
@@ -101,22 +102,28 @@ struct ContentView: View {
                         onBeginDragging: { app in
                             store.beginFolderDragging(app: app, folderID: folder.id)
                         },
-                        onDropOnApp: { app in
-                            store.handleFolderDrop(on: app, folderID: folder.id)
+                        onDropToInsertionIndex: { insertionIndex in
+                            withAnimation(LaunchMotion.reorder) {
+                                store.handleFolderDrop(
+                                    folderID: folder.id,
+                                    toInsertionIndex: insertionIndex
+                                )
+                            }
                         },
                         onDropToFolderPageBoundary: { page, direction, pageSize in
-                            store.handleFolderDropToPageBoundary(
-                                folderID: folder.id,
-                                currentPage: page,
-                                direction: direction,
-                                pageSize: pageSize
-                            )
-                        },
-                        onDropToFolderEnd: {
-                            store.handleFolderDropToEnd(folderID: folder.id)
+                            withAnimation(LaunchMotion.reorder) {
+                                store.handleFolderDropToPageBoundary(
+                                    folderID: folder.id,
+                                    currentPage: page,
+                                    direction: direction,
+                                    pageSize: pageSize
+                                )
+                            }
                         },
                         onDropExtract: {
-                            store.extractDraggingFolderAppToRoot()
+                            withAnimation(LaunchMotion.reorder) {
+                                store.extractDraggingFolderAppToRoot()
+                            }
                         }
                     )
                 }
@@ -204,10 +211,14 @@ struct ContentView: View {
                     store.beginDragging(entry)
                 },
                 onDropOnEntry: { entry, location, size in
-                    store.handleDrop(on: entry, location: location, tileSize: size)
+                    withAnimation(LaunchMotion.reorder) {
+                        store.handleDrop(on: entry, location: location, tileSize: size)
+                    }
                 },
-                onDropToPageEnd: {
-                    store.handleDropToPageEnd()
+                onDropToInsertionIndex: { insertionIndex in
+                    withAnimation(LaunchMotion.reorder) {
+                        store.handleDrop(toRootInsertionIndex: insertionIndex)
+                    }
                 },
                 onPageCapacityChange: { capacity in
                     store.updatePageSize(capacity)
@@ -219,7 +230,9 @@ struct ContentView: View {
                     store.clearPageEdgeHover()
                 },
                 onDropAtPageBoundary: { direction in
-                    store.dropDraggedEntryAtCurrentPageBoundary(direction: direction)
+                    withAnimation(LaunchMotion.reorder) {
+                        store.dropDraggedEntryAtCurrentPageBoundary(direction: direction)
+                    }
                 },
                 onWheelPageChange: handleMainWheelPaging(_:)
             )

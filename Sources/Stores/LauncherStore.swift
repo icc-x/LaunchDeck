@@ -51,7 +51,6 @@ final class LauncherStore: ObservableObject {
     private var edgeHoverDirection: Int?
     private var edgeHoverStartedAt = Date.distantPast
     private var lastEdgeFlipAt = Date.distantPast
-    private var dragAutoClearToken = UUID()
     private var persistenceTask: Task<Void, Never>?
     private var filterTask: Task<Void, Never>?
     private var metadataEnrichmentTask: Task<Void, Never>?
@@ -309,7 +308,6 @@ final class LauncherStore: ObservableObject {
         draggingFolderID = nil
         draggingEntryID = entry.id
         clearPageEdgeHover()
-        scheduleDragAutoClear()
     }
 
     func beginFolderDragging(app: AppItem, folderID: String) {
@@ -318,7 +316,6 @@ final class LauncherStore: ObservableObject {
         draggingFolderID = folderID
         draggingFolderAppID = app.id
         clearPageEdgeHover()
-        scheduleDragAutoClear()
     }
 
     func clearDragging() {
@@ -326,7 +323,30 @@ final class LauncherStore: ObservableObject {
         draggingFolderAppID = nil
         draggingFolderID = nil
         clearPageEdgeHover()
-        dragAutoClearToken = UUID()
+    }
+
+    func handleDrop(toRootInsertionIndex insertionIndex: Int) {
+        guard queryKeyword.isEmpty else {
+            clearDragging()
+            return
+        }
+
+        guard let draggedID = draggingEntryID else {
+            clearDragging()
+            return
+        }
+
+        let didChange = mutateLayout { editor in
+            editor.moveRootEntryToInsertionIndex(id: draggedID, insertionIndex: insertionIndex)
+        }
+
+        if didChange {
+            publishActionStatus(LaunchDeckStrings.rootReordered())
+            scheduleLayoutPersist()
+        }
+
+        clearDragging()
+        applyFilter()
     }
 
     func handleDrop(on targetEntry: LauncherEntry, location: CGPoint, tileSize: CGSize) {
@@ -343,6 +363,7 @@ final class LauncherStore: ObservableObject {
         let groupZone = groupingRect(in: tileSize)
         let draggedName = layoutEditor().rootEntry(id: draggedID)?.displayName ?? ""
         let isGrouping = groupZone.contains(location)
+        let placeAfterTarget = shouldPlaceDraggedEntryAfterTarget(location: location, tileSize: tileSize)
         var groupedFolder: FolderItem?
 
         let didChange = mutateLayout { editor in
@@ -351,7 +372,11 @@ final class LauncherStore: ObservableObject {
                 return groupedFolder != nil
             }
 
-            return editor.reorderRootEntry(draggedID: draggedID, targetID: targetEntry.id)
+            return editor.reorderRootEntry(
+                draggedID: draggedID,
+                targetID: targetEntry.id,
+                placeAfterTarget: placeAfterTarget
+            )
         }
 
         if didChange {
@@ -404,7 +429,7 @@ final class LauncherStore: ObservableObject {
         publishActionStatus(LaunchDeckStrings.folderRenamed(renamedFolder?.name ?? trimmed))
     }
 
-    func handleFolderDrop(on targetApp: AppItem, folderID: String) {
+    func handleFolderDrop(on targetApp: AppItem, folderID: String, location: CGPoint, tileSize: CGSize) {
         guard queryKeyword.isEmpty else {
             clearDragging()
             return
@@ -414,12 +439,45 @@ final class LauncherStore: ObservableObject {
             return
         }
 
+        let placeAfterTarget = shouldPlaceDraggedEntryAfterTarget(location: location, tileSize: tileSize)
         var updatedFolder: FolderItem?
         let didChange = mutateLayout { editor in
             updatedFolder = editor.reorderFolderApp(
                 folderID: folderID,
                 draggedAppID: draggedID,
-                targetAppID: targetApp.id
+                targetAppID: targetApp.id,
+                placeAfterTarget: placeAfterTarget
+            )
+            return updatedFolder != nil
+        }
+
+        if didChange {
+            scheduleLayoutPersist()
+            applyFilter()
+            if let updatedFolder {
+                activeFolder = updatedFolder
+                publishActionStatus(LaunchDeckStrings.folderReordered(updatedFolder.name))
+            }
+        }
+        clearDragging()
+    }
+
+    func handleFolderDrop(folderID: String, toInsertionIndex insertionIndex: Int) {
+        guard queryKeyword.isEmpty else {
+            clearDragging()
+            return
+        }
+        guard draggingFolderID == folderID, let draggedID = draggingFolderAppID else {
+            clearDragging()
+            return
+        }
+
+        var updatedFolder: FolderItem?
+        let didChange = mutateLayout { editor in
+            updatedFolder = editor.moveFolderAppToInsertionIndex(
+                folderID: folderID,
+                draggedAppID: draggedID,
+                insertionIndex: insertionIndex
             )
             return updatedFolder != nil
         }
@@ -747,6 +805,11 @@ final class LauncherStore: ObservableObject {
         )
     }
 
+    private func shouldPlaceDraggedEntryAfterTarget(location: CGPoint, tileSize: CGSize) -> Bool {
+        guard tileSize.width > 0 else { return false }
+        return location.x >= tileSize.width * 0.5
+    }
+
     private func defaultStatusMessage() -> String {
         rootEntries.isEmpty ? LaunchDeckStrings.noAppsStatus() : LaunchDeckStrings.appCount(allAppsCount)
     }
@@ -864,16 +927,5 @@ final class LauncherStore: ObservableObject {
             activeFolderID: queryKeyword.isEmpty ? activeFolder?.id : nil,
             updatedAt: Date()
         )
-    }
-
-    private func scheduleDragAutoClear() {
-        let token = UUID()
-        dragAutoClearToken = token
-
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 8_000_000_000)
-            guard self.dragAutoClearToken == token else { return }
-            self.clearDragging()
-        }
     }
 }

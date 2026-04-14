@@ -7,6 +7,7 @@ struct FolderOverlayView: View {
     let folder: FolderItem
     let apps: [AppItem]
     let isDraggingFolderApp: Bool
+    let draggingFolderAppID: String?
     let folderPageSize: Int
     let wheelPagingEnabled: Bool
     let iconProvider: AppIconProvider
@@ -16,9 +17,8 @@ struct FolderOverlayView: View {
     let onRename: (String) -> Void
     let onLaunch: (AppItem) -> Void
     let onBeginDragging: (AppItem) -> Void
-    let onDropOnApp: (AppItem) -> Void
+    let onDropToInsertionIndex: (Int) -> Void
     let onDropToFolderPageBoundary: (Int, Int, Int) -> Void
-    let onDropToFolderEnd: () -> Void
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var editingName = ""
@@ -32,8 +32,24 @@ struct FolderOverlayView: View {
     @State private var folderBadgeReloadToken = 0
     @State private var folderBadgeSubscription: AnyCancellable?
     @State private var subscribedFolderBadgeKey = ""
+    @State private var previewInsertionIndex: Int?
 
-    private let folderSpacingScale: CGFloat = 0.5
+    private enum GridLayout {
+        static let tileWidth: CGFloat = 104
+        static let tileHeight: CGFloat = 118
+        static let columnSpacing: CGFloat = 11 * 0.5
+        static let rowSpacing: CGFloat = 12 * 0.5
+        static let verticalPadding: CGFloat = 8
+    }
+
+    private struct GridMetrics {
+        let columnCount: Int
+        let columns: [GridItem]
+        let tileWidth: CGFloat
+        let tileHeight: CGFloat
+        let columnSpacing: CGFloat
+        let rowSpacing: CGFloat
+    }
 
     private var theme: LaunchTheme {
         LaunchTheme(colorScheme: colorScheme)
@@ -97,36 +113,65 @@ struct FolderOverlayView: View {
             }
 
             ZStack {
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 104, maximum: 104), spacing: 11 * folderSpacingScale)],
-                        spacing: 12 * folderSpacingScale
-                    ) {
-                        ForEach(visibleApps) { app in
-                            FolderAppButton(
-                                app: app,
-                                iconProvider: iconProvider,
-                                action: { onLaunch(app) },
-                                onBeginDragging: { onBeginDragging(app) },
-                                onDropOnApp: { onDropOnApp(app) }
-                            )
+                GeometryReader { proxy in
+                    let metrics = gridMetrics(for: proxy.size)
+                    let visibleAppsArray = Array(visibleApps)
+                    let displaySlots = makeDisplaySlots(from: visibleAppsArray)
+                    let visibleAppIDs = displaySlots.map(\.id)
+
+                    ScrollView(.vertical, showsIndicators: false) {
+                        LazyVGrid(columns: metrics.columns, spacing: metrics.rowSpacing) {
+                            ForEach(displaySlots) { slot in
+                                switch slot {
+                                case let .app(app):
+                                    FolderAppButton(
+                                        app: app,
+                                        isBeingDragged: app.id == draggingFolderAppID && previewInsertionIndex == nil,
+                                        iconProvider: iconProvider,
+                                        action: { onLaunch(app) },
+                                        onBeginDragging: { onBeginDragging(app) }
+                                    )
+                                case .placeholder:
+                                    FolderAppPlaceholderView()
+                                }
+                            }
                         }
+                        .padding(.vertical, GridLayout.verticalPadding)
+                        .animation(LaunchMotion.reorder, value: visibleAppIDs)
                     }
-                    .padding(.vertical, 8)
-                    .onDrop(of: [UTType.text], delegate: FolderPageDropDelegate {
-                        if pagedAppsCache.isEmpty {
-                            onDropToFolderEnd()
-                        } else {
-                            onDropToFolderPageBoundary(currentPage, 1, folderPageSize)
+                    .onDrop(
+                        of: [UTType.text],
+                        delegate: FolderGridDropDelegate(
+                            onHover: { location in
+                                updatePreview(
+                                    draggingAppID: draggingFolderAppID,
+                                    visibleApps: visibleAppsArray,
+                                    displaySlots: displaySlots,
+                                    metrics: metrics,
+                                    location: location
+                                )
+                            },
+                            onExitPreview: {
+                                previewInsertionIndex = nil
+                            },
+                            onPerformDrop: { location in
+                                performDrop(
+                                    draggingAppID: draggingFolderAppID,
+                                    visibleApps: visibleAppsArray,
+                                    displaySlots: displaySlots,
+                                    metrics: metrics,
+                                    location: location
+                                )
+                            }
+                        )
+                    )
+                    .overlay {
+                        if wheelPagingEnabled, pagedAppsCache.count > 1 {
+                            ScrollWheelCaptureView { event in
+                                handleFolderWheelPaging(event)
+                            }
+                            .allowsHitTesting(false)
                         }
-                    })
-                }
-                .overlay {
-                    if wheelPagingEnabled, pagedAppsCache.count > 1 {
-                        ScrollWheelCaptureView { event in
-                            handleFolderWheelPaging(event)
-                        }
-                        .allowsHitTesting(false)
                     }
                 }
 
@@ -189,6 +234,21 @@ struct FolderOverlayView: View {
             folderBadgeSubscription?.cancel()
             folderBadgeSubscription = nil
             subscribedFolderBadgeKey = ""
+        }
+        .onChange(of: draggingFolderAppID) { _, newValue in
+            if newValue == nil {
+                previewInsertionIndex = nil
+            }
+        }
+        .onChange(of: Array(visibleApps).map(\.id)) { _, _ in
+            guard let draggingFolderAppID else {
+                previewInsertionIndex = nil
+                return
+            }
+            if let previewInsertionIndex {
+                let maxInsertionIndex = max(0, Array(visibleApps).filter { $0.id != draggingFolderAppID }.count)
+                self.previewInsertionIndex = min(previewInsertionIndex, maxInsertionIndex)
+            }
         }
     }
 
@@ -310,6 +370,25 @@ struct FolderOverlayView: View {
         pagedAppsCache = LauncherPaging.chunked(apps, pageSize: folderPageSize)
     }
 
+    private func gridMetrics(for size: CGSize) -> GridMetrics {
+        let availableWidth = max(GridLayout.tileWidth, size.width)
+        let rawCount = Int((availableWidth + GridLayout.columnSpacing) / (GridLayout.tileWidth + GridLayout.columnSpacing))
+        let columnCount = max(1, rawCount)
+        let columns = Array(
+            repeating: GridItem(.fixed(GridLayout.tileWidth), spacing: GridLayout.columnSpacing),
+            count: columnCount
+        )
+
+        return GridMetrics(
+            columnCount: columnCount,
+            columns: columns,
+            tileWidth: GridLayout.tileWidth,
+            tileHeight: GridLayout.tileHeight,
+            columnSpacing: GridLayout.columnSpacing,
+            rowSpacing: GridLayout.rowSpacing
+        )
+    }
+
     private var folderBadgeIconIDs: [String] {
         Array(apps.prefix(4).map(\.id))
     }
@@ -336,18 +415,224 @@ struct FolderOverlayView: View {
         folderBadgeReloadToken &+= 1
     }
 
+    private func makeDisplaySlots(from visibleApps: [AppItem]) -> [FolderGridSlot] {
+        guard let draggingFolderAppID, let previewInsertionIndex else {
+            return visibleApps.map(FolderGridSlot.app)
+        }
+
+        let remainingApps = visibleApps.filter { $0.id != draggingFolderAppID }
+        let clampedInsertionIndex = max(0, min(previewInsertionIndex, remainingApps.count))
+        var slots = remainingApps.map(FolderGridSlot.app)
+        slots.insert(.placeholder(id: draggingFolderAppID), at: clampedInsertionIndex)
+        return slots
+    }
+
+    private func updatePreview(
+        draggingAppID: String?,
+        visibleApps: [AppItem],
+        displaySlots: [FolderGridSlot],
+        metrics: GridMetrics,
+        location: CGPoint
+    ) {
+        guard draggingAppID != nil else {
+            previewInsertionIndex = nil
+            return
+        }
+
+        switch hoverDestination(
+            draggingAppID: draggingAppID,
+            visibleApps: visibleApps,
+            displaySlots: displaySlots,
+            metrics: metrics,
+            location: location
+        ) {
+        case .none, .placeholder:
+            return
+        case .end:
+            previewInsertionIndex = visibleApps.filter { $0.id != draggingAppID }.count
+        case .app:
+            if let insertionIndex = insertionIndex(
+                draggingAppID: draggingAppID,
+                visibleApps: visibleApps,
+                displaySlots: displaySlots,
+                metrics: metrics,
+                location: location
+            ) {
+                previewInsertionIndex = insertionIndex
+            }
+        }
+    }
+
+    private func performDrop(
+        draggingAppID: String?,
+        visibleApps: [AppItem],
+        displaySlots: [FolderGridSlot],
+        metrics: GridMetrics,
+        location: CGPoint
+    ) {
+        defer { previewInsertionIndex = nil }
+
+        if let insertionIndex = insertionIndex(
+            draggingAppID: draggingAppID,
+            visibleApps: visibleApps,
+            displaySlots: displaySlots,
+            metrics: metrics,
+            location: location
+        ) {
+            onDropToInsertionIndex(globalInsertionIndex(for: insertionIndex))
+            return
+        }
+
+        let fallbackInsertionIndex = previewInsertionIndex
+            ?? visibleApps.filter { $0.id != draggingAppID }.count
+        onDropToInsertionIndex(globalInsertionIndex(for: fallbackInsertionIndex))
+    }
+
+    private func hoverDestination(
+        draggingAppID: String?,
+        visibleApps: [AppItem],
+        displaySlots: [FolderGridSlot],
+        metrics: GridMetrics,
+        location: CGPoint
+    ) -> FolderHoverDestination {
+        guard let draggingAppID else { return .none }
+
+        let translatedX = location.x
+        let translatedY = location.y - GridLayout.verticalPadding
+        guard translatedX >= 0, translatedY >= 0 else { return .none }
+
+        let strideX = metrics.tileWidth + metrics.columnSpacing
+        let strideY = metrics.tileHeight + metrics.rowSpacing
+        guard strideX > 0, strideY > 0 else { return .none }
+
+        let column = Int(translatedX / strideX)
+        let row = Int(translatedY / strideY)
+        guard column >= 0, column < metrics.columnCount, row >= 0 else { return .none }
+
+        let localX = translatedX - CGFloat(column) * strideX
+        let localY = translatedY - CGFloat(row) * strideY
+        guard localX >= 0, localX <= metrics.tileWidth, localY >= 0, localY <= metrics.tileHeight else {
+            return .none
+        }
+
+        let index = row * metrics.columnCount + column
+        guard index < displaySlots.count else { return .end }
+
+        switch displaySlots[index] {
+        case .placeholder:
+            return .placeholder
+        case let .app(app):
+            guard app.id != draggingAppID else { return .placeholder }
+            return .app(app, CGPoint(x: localX, y: localY), CGSize(width: metrics.tileWidth, height: metrics.tileHeight))
+        }
+    }
+
+    private func insertionIndex(
+        draggingAppID: String?,
+        visibleApps: [AppItem],
+        displaySlots: [FolderGridSlot],
+        metrics: GridMetrics,
+        location: CGPoint
+    ) -> Int? {
+        guard let draggingAppID else { return nil }
+
+        switch hoverDestination(
+            draggingAppID: draggingAppID,
+            visibleApps: visibleApps,
+            displaySlots: displaySlots,
+            metrics: metrics,
+            location: location
+        ) {
+        case .none:
+            return nil
+        case .end:
+            return visibleApps.filter { $0.id != draggingAppID }.count
+        case .placeholder:
+            return previewInsertionIndex
+        case let .app(app, localLocation, tileSize):
+            let remainingApps = visibleApps.filter { $0.id != draggingAppID }
+            guard let targetIndex = remainingApps.firstIndex(where: { $0.id == app.id }) else {
+                return nil
+            }
+
+            let insertionIndex = localLocation.x >= tileSize.width * 0.5
+                ? targetIndex + 1
+                : targetIndex
+            return max(0, min(insertionIndex, remainingApps.count))
+        }
+    }
+
+    private func globalInsertionIndex(for localInsertionIndex: Int) -> Int {
+        let pageStart = currentPage * max(1, folderPageSize)
+        let remainingCount = max(0, apps.count - (draggingFolderAppID == nil ? 0 : 1))
+        return max(0, min(pageStart + localInsertionIndex, remainingCount))
+    }
+
+}
+
+private enum FolderHoverDestination {
+    case none
+    case app(AppItem, CGPoint, CGSize)
+    case placeholder
+    case end
+}
+
+private enum FolderGridSlot: Identifiable {
+    case app(AppItem)
+    case placeholder(id: String)
+
+    var id: String {
+        switch self {
+        case let .app(app):
+            return app.id
+        case let .placeholder(id):
+            return "folder-placeholder-\(id)"
+        }
+    }
+}
+
+private struct FolderAppPlaceholderView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var theme: LaunchTheme {
+        LaunchTheme(colorScheme: colorScheme)
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(theme.placeholderFill)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(theme.placeholderStroke, lineWidth: 1)
+                )
+                .frame(width: 70, height: 70)
+
+            VStack(spacing: 4) {
+                Capsule()
+                    .fill(theme.placeholderSecondaryFill)
+                    .frame(width: 52, height: 9)
+                Capsule()
+                    .fill(theme.placeholderSecondaryFill.opacity(0.78))
+                    .frame(width: 36, height: 7)
+            }
+        }
+            .padding(.top, 4)
+            .frame(width: 104, height: 118)
+            .scaleEffect(0.98)
+            .transition(.scale(scale: 0.94).combined(with: .opacity))
+    }
 }
 
 private struct FolderAppButton: View {
     let app: AppItem
+    let isBeingDragged: Bool
     let iconProvider: AppIconProvider
     let action: () -> Void
     let onBeginDragging: () -> Void
-    let onDropOnApp: () -> Void
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var isHovering = false
-    @State private var isDropTargeted = false
     @State private var iconReloadToken = 0
     @State private var iconSubscription: AnyCancellable?
 
@@ -371,14 +656,11 @@ private struct FolderAppButton: View {
                 .frame(maxWidth: 96)
         }
         .contentShape(Rectangle())
-        .scaleEffect(isHovering ? 1.02 : 1)
+        .opacity(isBeingDragged ? 0.06 : 1)
+        .scaleEffect(isBeingDragged ? 0.92 : (isHovering ? 1.02 : 1))
+        .blur(radius: isBeingDragged ? 1.1 : 0)
         .animation(LaunchMotion.hover, value: isHovering)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(isDropTargeted ? theme.dropStroke : .clear, lineWidth: 1)
-                .padding(.top, 4)
-        )
-        .animation(LaunchMotion.quickFade, value: isDropTargeted)
+        .animation(LaunchMotion.reorder, value: isBeingDragged)
         .onHover { isHovering = $0 }
         .onAppear {
             if iconSubscription == nil {
@@ -400,38 +682,57 @@ private struct FolderAppButton: View {
         .onDrag {
             onBeginDragging()
             return NSItemProvider(object: "folder:\(app.id)" as NSString)
+        } preview: {
+            dragPreview
         }
-        .onDrop(of: [UTType.text], delegate: FolderAppDropDelegate(
-            isDropTargeted: $isDropTargeted,
-            onDropOnApp: onDropOnApp
-        ))
+    }
+
+    private var dragPreview: some View {
+        VStack(spacing: 8) {
+            Image(nsImage: iconProvider.icon(for: app))
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 70, height: 70)
+
+            Text(app.name)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(theme.textPrimary)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 96)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(theme.dragPreviewFill)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(theme.dragPreviewStroke, lineWidth: 1)
+                )
+        )
+        .scaleEffect(1.05)
+        .shadow(color: theme.dragPreviewShadow, radius: 18, y: 10)
+        .compositingGroup()
     }
 }
 
-private struct FolderPageDropDelegate: DropDelegate {
-    let onDropToPageEnd: () -> Void
+private struct FolderGridDropDelegate: DropDelegate {
+    let onHover: (CGPoint) -> Void
+    let onExitPreview: () -> Void
+    let onPerformDrop: (CGPoint) -> Void
 
-    func performDrop(info: DropInfo) -> Bool {
-        onDropToPageEnd()
-        return true
-    }
-}
-
-private struct FolderAppDropDelegate: DropDelegate {
-    @Binding var isDropTargeted: Bool
-    let onDropOnApp: () -> Void
-
-    func dropEntered(info: DropInfo) {
-        isDropTargeted = true
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        onHover(info.location)
+        return DropProposal(operation: .move)
     }
 
     func dropExited(info: DropInfo) {
-        isDropTargeted = false
+        onExitPreview()
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        isDropTargeted = false
-        onDropOnApp()
+        onPerformDrop(info.location)
         return true
     }
 }

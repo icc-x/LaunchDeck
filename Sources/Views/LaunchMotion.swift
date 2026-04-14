@@ -1,6 +1,12 @@
 import SwiftUI
 
 enum LaunchMotion {
+    static let reorder = Animation.interactiveSpring(
+        response: 0.28,
+        dampingFraction: 0.84,
+        blendDuration: 0.16
+    )
+
     static let page = Animation.interactiveSpring(
         response: 0.46,
         dampingFraction: 0.90,

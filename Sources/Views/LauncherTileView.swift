@@ -9,6 +9,7 @@ struct LauncherTileView: View {
     let iconProvider: AppIconProvider
     let folderPreviewIconProvider: AppIconProvider
     let isSearchMode: Bool
+    let isBeingDragged: Bool
     let namespace: Namespace.ID
     let onLaunch: (AppItem) -> Void
     let onOpenFolder: (FolderItem) -> Void
@@ -17,7 +18,6 @@ struct LauncherTileView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var isHovering = false
-    @State private var isDropTargeted = false
     @State private var iconReloadToken = 0
     @State private var iconSubscription: AnyCancellable?
     @State private var subscribedIconKey = ""
@@ -89,15 +89,16 @@ struct LauncherTileView: View {
         }
         .frame(width: tileSize.width, height: tileSize.height)
         .contentShape(Rectangle())
-        .scaleEffect(isHovering ? 1.03 : 1)
-        .shadow(color: isHovering ? theme.tileShadowHover : theme.tileShadowNormal, radius: isHovering ? 6 : 3, y: isHovering ? 3 : 1)
-        .overlay {
-            RoundedRectangle(cornerRadius: metrics.folderCornerRadius, style: .continuous)
-                .stroke(isDropTargeted ? theme.dropStroke : .clear, lineWidth: 1.2)
-                .padding(.bottom, metrics.dropOutlineBottomInset)
-        }
+        .opacity(isBeingDragged ? 0.06 : 1)
+        .scaleEffect(isBeingDragged ? 0.92 : (isHovering ? 1.03 : 1))
+        .blur(radius: isBeingDragged ? 1.2 : 0)
+        .shadow(
+            color: isBeingDragged ? .clear : (isHovering ? theme.tileShadowHover : theme.tileShadowNormal),
+            radius: isBeingDragged ? 0 : (isHovering ? 6 : 3),
+            y: isBeingDragged ? 0 : (isHovering ? 3 : 1)
+        )
         .animation(LaunchMotion.hover, value: isHovering)
-        .animation(LaunchMotion.quickFade, value: isDropTargeted)
+        .animation(LaunchMotion.reorder, value: isBeingDragged)
         .help(entry.displayName)
         .accessibilityLabel(entry.displayName)
         .onTapGesture {
@@ -121,17 +122,10 @@ struct LauncherTileView: View {
             view.onDrag {
                 onBeginDragging(entry)
                 return NSItemProvider(object: entry.id as NSString)
+            } preview: {
+                dragPreview
             }
         }
-        .onDrop(
-            of: [UTType.text],
-            delegate: TileDropDelegate(
-                targetEntry: entry,
-                tileSize: tileSize,
-                isDropTargeted: $isDropTargeted,
-                onDrop: onDrop
-            )
-        )
     }
 
     private var observedIconIDs: [String] {
@@ -197,6 +191,31 @@ struct LauncherTileView: View {
         }
     }
 
+    private var dragPreview: some View {
+        VStack(spacing: metrics.iconToLabelSpacing) {
+            iconSurface
+            Text(entry.displayName)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(theme.textPrimary)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: metrics.labelMaxWidth)
+        }
+        .padding(.horizontal, max(8, tileWidth * 0.07))
+        .padding(.vertical, max(8, tileWidth * 0.06))
+        .background(
+            RoundedRectangle(cornerRadius: metrics.folderCornerRadius * 1.1, style: .continuous)
+                .fill(theme.dragPreviewFill)
+                .overlay(
+                    RoundedRectangle(cornerRadius: metrics.folderCornerRadius * 1.1, style: .continuous)
+                        .stroke(theme.dragPreviewStroke, lineWidth: 1)
+                )
+        )
+        .scaleEffect(1.05)
+        .shadow(color: theme.dragPreviewShadow, radius: 18, y: 10)
+        .compositingGroup()
+    }
+
     private func refreshIconSubscription(force: Bool) {
         let key = observedIconKey
         guard force || key != subscribedIconKey else { return }
@@ -223,26 +242,5 @@ struct LauncherTileView: View {
         case .folder:
             return folderPreviewIconProvider
         }
-    }
-}
-
-private struct TileDropDelegate: DropDelegate {
-    let targetEntry: LauncherEntry
-    let tileSize: CGSize
-    @Binding var isDropTargeted: Bool
-    let onDrop: (LauncherEntry, CGPoint, CGSize) -> Void
-
-    func dropEntered(info: DropInfo) {
-        isDropTargeted = true
-    }
-
-    func dropExited(info: DropInfo) {
-        isDropTargeted = false
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        isDropTargeted = false
-        onDrop(targetEntry, info.location, tileSize)
-        return true
     }
 }
