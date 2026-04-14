@@ -27,7 +27,7 @@ final class AppIconProvider {
 
     private let cache = NSCache<NSString, NSImage>()
     private var iconLoadedSubjects: [String: PassthroughSubject<Void, Never>] = [:]
-    private let iconSize = NSSize(width: 72, height: 72)
+    private let iconSize: NSSize
     private var pendingJobs: [IconJob] = []
     private var nextPendingJobIndex = 0
     private var pendingReasons: [String: LoadReason] = [:]
@@ -43,7 +43,8 @@ final class AppIconProvider {
         return NSImage(size: iconSize)
     }()
 
-    init() {
+    init(iconSize: NSSize = NSSize(width: 72, height: 72)) {
+        self.iconSize = iconSize
         cache.countLimit = CachePolicy.countLimit
         cache.totalCostLimit = CachePolicy.totalCostLimit
     }

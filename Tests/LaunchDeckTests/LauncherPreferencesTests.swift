@@ -4,6 +4,14 @@ import XCTest
 
 @MainActor
 final class LauncherPreferencesTests: XCTestCase {
+    func testDefaultsUseZeroPrefetchDepth() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let preferences = LauncherPreferences(userDefaults: defaults)
+
+        XCTAssertEqual(preferences.prefetchPageDepth, 0)
+        XCTAssertEqual(preferences.snapshot.prefetchPageDepth, 0)
+    }
+
     func testSnapshotReflectsCurrentValues() {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         let preferences = LauncherPreferences(userDefaults: defaults)

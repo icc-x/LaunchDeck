@@ -15,6 +15,7 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
     @State private var iconProvider = AppIconProvider()
+    @State private var folderPreviewIconProvider = AppIconProvider(iconSize: NSSize(width: 28, height: 28))
     @FocusState private var searchFocused: Bool
     @Namespace private var folderNamespace
     @State private var lastWheelFlipAt = Date.distantPast
@@ -84,6 +85,7 @@ struct ContentView: View {
                         folderPageSize: preferences.folderPageSize,
                         wheelPagingEnabled: preferences.enableWheelPaging,
                         iconProvider: iconProvider,
+                        folderPreviewIconProvider: folderPreviewIconProvider,
                         namespace: folderNamespace,
                         theme: theme,
                         onClose: {
@@ -160,6 +162,7 @@ struct ContentView: View {
             } else if phase == .background {
                 lastPrefetchKey = ""
                 iconProvider.clearCache()
+                folderPreviewIconProvider.clearCache()
             }
         }
     }
@@ -192,6 +195,7 @@ struct ContentView: View {
                 draggingEntryID: store.draggingEntryID,
                 isFolderOpen: store.activeFolder != nil,
                 iconProvider: iconProvider,
+                folderPreviewIconProvider: folderPreviewIconProvider,
                 namespace: folderNamespace,
                 onLaunch: { app in
                     store.launch(app)
@@ -256,6 +260,7 @@ struct ContentView: View {
 
     private func prefetchVisibleIcons() {
         var apps: [AppItem] = []
+        var folderPreviewApps: [AppItem] = []
 
         func appendEntries(_ entries: ArraySlice<LauncherEntry>) {
             for entry in entries {
@@ -263,7 +268,7 @@ struct ContentView: View {
                 case let .app(app):
                     apps.append(app)
                 case let .folder(folder):
-                    apps.append(contentsOf: folder.apps.prefix(4))
+                    folderPreviewApps.append(contentsOf: folder.apps.prefix(4))
                 }
             }
         }
@@ -278,21 +283,30 @@ struct ContentView: View {
 
         if let folder = store.activeFolder {
             let folderApps = store.folderApps(in: folder)
-            let folderPrefetchCount = max(preferences.folderPageSize, preferences.folderPageSize * 2)
+            let folderPrefetchCount = preferences.folderPageSize
             apps.append(contentsOf: folderApps.prefix(folderPrefetchCount))
+            folderPreviewApps.append(contentsOf: folderApps.prefix(4))
         }
 
-        var deduped: [AppItem] = []
-        deduped.reserveCapacity(apps.count)
+        var dedupedMain: [AppItem] = []
+        dedupedMain.reserveCapacity(apps.count)
         var seen = Set<String>()
         for app in apps where seen.insert(app.id).inserted {
-            deduped.append(app)
+            dedupedMain.append(app)
         }
 
-        let prefetchKey = deduped.map(\.id).joined(separator: "|")
+        var dedupedPreview: [AppItem] = []
+        dedupedPreview.reserveCapacity(folderPreviewApps.count)
+        seen.removeAll(keepingCapacity: true)
+        for app in folderPreviewApps where seen.insert(app.id).inserted {
+            dedupedPreview.append(app)
+        }
+
+        let prefetchKey = (dedupedMain.map(\.id) + ["#"] + dedupedPreview.map(\.id)).joined(separator: "|")
         guard prefetchKey != lastPrefetchKey else { return }
         lastPrefetchKey = prefetchKey
-        iconProvider.prefetch(deduped)
+        iconProvider.prefetch(dedupedMain)
+        folderPreviewIconProvider.prefetch(dedupedPreview)
     }
 
     private func errorToast(_ message: String) -> some View {

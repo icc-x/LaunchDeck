@@ -7,6 +7,7 @@ struct LauncherTileView: View {
     let entry: LauncherEntry
     let tileWidth: CGFloat
     let iconProvider: AppIconProvider
+    let folderPreviewIconProvider: AppIconProvider
     let isSearchMode: Bool
     let isEditing: Bool
     let namespace: Namespace.ID
@@ -182,7 +183,7 @@ struct LauncherTileView: View {
                 spacing: metrics.miniGridSpacing
             ) {
                 ForEach(Array(folder.apps.prefix(4).enumerated()), id: \.offset) { _, app in
-                    Image(nsImage: iconProvider.icon(for: app))
+                    Image(nsImage: folderPreviewIconProvider.icon(for: app))
                         .resizable()
                         .frame(width: metrics.miniIconSize, height: metrics.miniIconSize)
                         .clipShape(RoundedRectangle(cornerRadius: metrics.miniIconCornerRadius, style: .continuous))
@@ -218,12 +219,21 @@ struct LauncherTileView: View {
             return
         }
 
-        iconSubscription = iconProvider.iconLoadedPublisher(for: observedIconIDs).sink { _ in
+        iconSubscription = activeIconProvider.iconLoadedPublisher(for: observedIconIDs).sink { _ in
             iconReloadToken &+= 1
         }
 
         // Pull once after (re)subscribe so already-cached icons can render immediately.
         iconReloadToken &+= 1
+    }
+
+    private var activeIconProvider: AppIconProvider {
+        switch entry {
+        case .app:
+            return iconProvider
+        case .folder:
+            return folderPreviewIconProvider
+        }
     }
 }
 

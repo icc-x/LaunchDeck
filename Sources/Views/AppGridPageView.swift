@@ -6,6 +6,7 @@ struct AppGridPageView: View {
     let isSearchMode: Bool
     let isEditing: Bool
     let iconProvider: AppIconProvider
+    let folderPreviewIconProvider: AppIconProvider
     let namespace: Namespace.ID
     let onLaunch: (AppItem) -> Void
     let onOpenFolder: (FolderItem) -> Void
@@ -88,6 +89,7 @@ struct AppGridPageView: View {
                         entry: entry,
                         tileWidth: metrics.tileWidth,
                         iconProvider: iconProvider,
+                        folderPreviewIconProvider: folderPreviewIconProvider,
                         isSearchMode: isSearchMode,
                         isEditing: isEditing,
                         namespace: namespace,

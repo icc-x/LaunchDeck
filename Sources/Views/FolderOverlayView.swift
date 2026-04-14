@@ -11,6 +11,7 @@ struct FolderOverlayView: View {
     let folderPageSize: Int
     let wheelPagingEnabled: Bool
     let iconProvider: AppIconProvider
+    let folderPreviewIconProvider: AppIconProvider
     let namespace: Namespace.ID
     let onClose: () -> Void
     let onRename: (String) -> Void
@@ -201,7 +202,7 @@ struct FolderOverlayView: View {
                 .fill(.thinMaterial)
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(16), spacing: 3), count: 2), spacing: 3) {
                 ForEach(Array(apps.prefix(4).enumerated()), id: \.offset) { _, app in
-                    Image(nsImage: iconProvider.icon(for: app))
+                    Image(nsImage: folderPreviewIconProvider.icon(for: app))
                         .resizable()
                         .frame(width: 16, height: 16)
                         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
@@ -331,7 +332,7 @@ struct FolderOverlayView: View {
             return
         }
 
-        folderBadgeSubscription = iconProvider.iconLoadedPublisher(for: folderBadgeIconIDs).sink { _ in
+        folderBadgeSubscription = folderPreviewIconProvider.iconLoadedPublisher(for: folderBadgeIconIDs).sink { _ in
             folderBadgeReloadToken &+= 1
         }
 

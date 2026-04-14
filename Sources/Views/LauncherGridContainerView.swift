@@ -12,6 +12,7 @@ struct LauncherGridContainerView: View {
     let draggingEntryID: String?
     let isFolderOpen: Bool
     let iconProvider: AppIconProvider
+    let folderPreviewIconProvider: AppIconProvider
     let namespace: Namespace.ID
     let onLaunch: (AppItem) -> Void
     let onOpenFolder: (FolderItem) -> Void
@@ -32,6 +33,7 @@ struct LauncherGridContainerView: View {
                 isSearchMode: isSearchMode,
                 isEditing: isEditing,
                 iconProvider: iconProvider,
+                folderPreviewIconProvider: folderPreviewIconProvider,
                 namespace: namespace,
                 onLaunch: onLaunch,
                 onOpenFolder: onOpenFolder,

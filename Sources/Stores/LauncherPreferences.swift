@@ -46,7 +46,7 @@ struct LauncherPreferencesSnapshot: Codable, Equatable, Sendable {
         enableWheelPaging: true,
         restoreLastSession: true,
         showStatusDetails: true,
-        prefetchPageDepth: 1,
+        prefetchPageDepth: 0,
         folderPageSize: 18
     )
 }
@@ -108,7 +108,9 @@ final class LauncherPreferences: ObservableObject {
         enableWheelPaging = userDefaults.object(forKey: Key.enableWheelPaging) as? Bool ?? true
         restoreLastSession = userDefaults.object(forKey: Key.restoreLastSession) as? Bool ?? true
         showStatusDetails = userDefaults.object(forKey: Key.showStatusDetails) as? Bool ?? true
-        prefetchPageDepth = Self.normalizedPrefetchPageDepth(userDefaults.object(forKey: Key.prefetchPageDepth) as? Int ?? 1)
+        prefetchPageDepth = Self.normalizedPrefetchPageDepth(
+            userDefaults.object(forKey: Key.prefetchPageDepth) as? Int ?? LauncherPreferencesSnapshot.defaults.prefetchPageDepth
+        )
         folderPageSize = Self.normalizedFolderPageSize(userDefaults.object(forKey: Key.folderPageSize) as? Int ?? 18)
     }
 

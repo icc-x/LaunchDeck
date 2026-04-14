@@ -50,9 +50,35 @@ struct LauncherSearchIndex {
 
     private mutating func rebuildIfNeeded(entries: [LauncherEntry]) {
         guard isDirty else { return }
-        items = entries.flatMap(\.flattenedApps).map { app in
-            Item(appID: app.id, normalizedName: Self.normalize(app.name))
+
+        var rebuilt: [Item] = []
+        rebuilt.reserveCapacity(
+            entries.reduce(into: 0) { count, entry in
+                switch entry {
+                case .app:
+                    count += 1
+                case let .folder(folder):
+                    count += folder.apps.count
+                }
+            }
+        )
+
+        for entry in entries {
+            switch entry {
+            case let .app(app):
+                rebuilt.append(
+                    Item(appID: app.id, normalizedName: Self.normalize(app.name))
+                )
+            case let .folder(folder):
+                for app in folder.apps {
+                    rebuilt.append(
+                        Item(appID: app.id, normalizedName: Self.normalize(app.name))
+                    )
+                }
+            }
         }
+
+        items = rebuilt
         isDirty = false
     }
 

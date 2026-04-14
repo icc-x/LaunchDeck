@@ -9,6 +9,7 @@ struct LauncherFolderOverlayContainer: View {
     let folderPageSize: Int
     let wheelPagingEnabled: Bool
     let iconProvider: AppIconProvider
+    let folderPreviewIconProvider: AppIconProvider
     let namespace: Namespace.ID
     let theme: LaunchTheme
     let onClose: () -> Void
@@ -55,6 +56,7 @@ struct LauncherFolderOverlayContainer: View {
                 folderPageSize: folderPageSize,
                 wheelPagingEnabled: wheelPagingEnabled,
                 iconProvider: iconProvider,
+                folderPreviewIconProvider: folderPreviewIconProvider,
                 namespace: namespace,
                 onClose: onClose,
                 onRename: onRename,

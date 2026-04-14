@@ -45,6 +45,7 @@ final class LauncherStore: ObservableObject {
     private var catalogAppIDs: [String] = []
     private var pageSize = 35
     private var filteredEntries: [LauncherEntry] = []
+    private var filteredResultsCount = 0
     private var searchIndex = LauncherSearchIndex()
     private var draggingFolderID: String?
     private var edgeHoverDirection: Int?
@@ -97,7 +98,7 @@ final class LauncherStore: ObservableObject {
         }
 
         if !queryKeyword.isEmpty {
-            components.append(LaunchDeckStrings.resultsCount(filteredEntries.count))
+            components.append(LaunchDeckStrings.resultsCount(filteredResultsCount))
         }
 
         return components.isEmpty ? nil : components.joined(separator: " • ")
@@ -691,9 +692,15 @@ final class LauncherStore: ObservableObject {
         let keyword = queryKeyword
 
         if keyword.isEmpty {
-            filteredEntries = rootEntries
+            filteredResultsCount = 0
+            if !filteredEntries.isEmpty {
+                filteredEntries.removeAll(keepingCapacity: true)
+            }
+            pages = LauncherPaging.chunked(rootEntries, pageSize: pageSize)
         } else {
             filteredEntries = searchIndex.filter(entries: rootEntries, keyword: keyword)
+            filteredResultsCount = filteredEntries.count
+            pages = LauncherPaging.chunked(filteredEntries, pageSize: pageSize)
 
             if isEditing {
                 isEditing = false
@@ -702,8 +709,6 @@ final class LauncherStore: ObservableObject {
                 activeFolder = nil
             }
         }
-
-        pages = LauncherPaging.chunked(filteredEntries, pageSize: pageSize)
         syncActiveFolder()
 
         guard !pages.isEmpty else {
@@ -720,7 +725,7 @@ final class LauncherStore: ObservableObject {
         if !keyword.isEmpty {
             let elapsedMs = DispatchTime.now().uptimeNanoseconds - filterStart.uptimeNanoseconds
             logger.info(
-                "store.filter keyword_len=\(keyword.count, privacy: .public) result=\(self.filteredEntries.count, privacy: .public) elapsed_ms=\(Double(elapsedMs) / 1_000_000, privacy: .public)"
+                "store.filter keyword_len=\(keyword.count, privacy: .public) result=\(self.filteredResultsCount, privacy: .public) elapsed_ms=\(Double(elapsedMs) / 1_000_000, privacy: .public)"
             )
         }
     }
