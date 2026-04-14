@@ -2,7 +2,7 @@ import Foundation
 
 struct LauncherSearchIndex {
     private struct Item: Sendable {
-        let app: AppItem
+        let appID: String
         let normalizedName: String
     }
 
@@ -21,16 +21,37 @@ struct LauncherSearchIndex {
 
         rebuildIfNeeded(entries: entries)
         let normalizedKeyword = Self.normalize(trimmed)
-        return items
-            .filter { $0.normalizedName.contains(normalizedKeyword) }
-            .map { .app($0.app) }
+        let matchedIDs = Set(
+            items.lazy
+                .filter { $0.normalizedName.contains(normalizedKeyword) }
+                .map(\.appID)
+        )
+
+        guard !matchedIDs.isEmpty else { return [] }
+
+        var results: [LauncherEntry] = []
+        results.reserveCapacity(matchedIDs.count)
+
+        for entry in entries {
+            switch entry {
+            case let .app(app):
+                if matchedIDs.contains(app.id) {
+                    results.append(.app(app))
+                }
+            case let .folder(folder):
+                for app in folder.apps where matchedIDs.contains(app.id) {
+                    results.append(.app(app))
+                }
+            }
+        }
+
+        return results
     }
 
     private mutating func rebuildIfNeeded(entries: [LauncherEntry]) {
         guard isDirty else { return }
-        let apps = entries.flatMap(\.flattenedApps)
-        items = apps.map { app in
-            Item(app: app, normalizedName: Self.normalize(app.name))
+        items = entries.flatMap(\.flattenedApps).map { app in
+            Item(appID: app.id, normalizedName: Self.normalize(app.name))
         }
         isDirty = false
     }

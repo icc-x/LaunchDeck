@@ -8,6 +8,11 @@ final class AppIconProvider {
         let path: String
     }
 
+    private enum LoadReason {
+        case demand
+        case prefetch
+    }
+
     private struct PreparedIcon {
         let image: NSImage
         let cost: Int
@@ -25,7 +30,9 @@ final class AppIconProvider {
     private let iconSize = NSSize(width: 72, height: 72)
     private var pendingJobs: [IconJob] = []
     private var nextPendingJobIndex = 0
-    private var pendingIDs = Set<String>()
+    private var pendingReasons: [String: LoadReason] = [:]
+    private var cachedIDs = Set<String>()
+    private var workingSetIDs = Set<String>()
     private var loadingTask: Task<Void, Never>?
 
     private lazy var placeholderIcon: NSImage = {
@@ -51,14 +58,28 @@ final class AppIconProvider {
             return image
         }
 
-        enqueue(app)
+        enqueue(app, reason: .demand)
         return placeholderIcon
     }
 
     func prefetch(_ apps: [AppItem]) {
+        workingSetIDs = Set(apps.map(\.id))
+        trimCache(keeping: workingSetIDs)
+
         for app in apps {
-            enqueue(app)
+            enqueue(app, reason: .prefetch)
         }
+    }
+
+    func clearCache() {
+        loadingTask?.cancel()
+        loadingTask = nil
+        cache.removeAllObjects()
+        pendingJobs.removeAll(keepingCapacity: false)
+        nextPendingJobIndex = 0
+        pendingReasons.removeAll(keepingCapacity: false)
+        cachedIDs.removeAll(keepingCapacity: false)
+        workingSetIDs.removeAll(keepingCapacity: false)
     }
 
     func iconLoadedPublisher(for appIDs: [String]) -> AnyPublisher<Void, Never> {
@@ -84,11 +105,18 @@ final class AppIconProvider {
         return Publishers.MergeMany(publishers).eraseToAnyPublisher()
     }
 
-    private func enqueue(_ app: AppItem) {
+    private func enqueue(_ app: AppItem, reason: LoadReason) {
         let key = app.id as NSString
         guard cache.object(forKey: key) == nil else { return }
-        guard pendingIDs.insert(app.id).inserted else { return }
 
+        if let existingReason = pendingReasons[app.id] {
+            if existingReason == .prefetch, reason == .demand {
+                pendingReasons[app.id] = .demand
+            }
+            return
+        }
+
+        pendingReasons[app.id] = reason
         pendingJobs.append(.init(id: app.id, path: app.url.path))
         startLoaderIfNeeded()
     }
@@ -112,10 +140,15 @@ final class AppIconProvider {
                 continue
             }
 
+            if job.reason == .prefetch, !workingSetIDs.contains(job.id) {
+                continue
+            }
+
             let preparedIcon: PreparedIcon = autoreleasepool {
                 makePreparedIcon(forFileAtPath: job.path)
             }
             cache.setObject(preparedIcon.image, forKey: key, cost: preparedIcon.cost)
+            cachedIDs.insert(job.id)
             if let subject = iconLoadedSubjects.removeValue(forKey: job.id) {
                 subject.send(())
                 subject.send(completion: .finished)
@@ -126,7 +159,7 @@ final class AppIconProvider {
         loadingTask = nil
     }
 
-    private func dequeueJob() -> IconJob? {
+    private func dequeueJob() -> (id: String, path: String, reason: LoadReason)? {
         guard nextPendingJobIndex < pendingJobs.count else {
             pendingJobs.removeAll(keepingCapacity: true)
             nextPendingJobIndex = 0
@@ -135,14 +168,14 @@ final class AppIconProvider {
 
         let job = pendingJobs[nextPendingJobIndex]
         nextPendingJobIndex += 1
-        pendingIDs.remove(job.id)
+        let reason = pendingReasons.removeValue(forKey: job.id) ?? .prefetch
 
         if nextPendingJobIndex >= 64, nextPendingJobIndex * 2 >= pendingJobs.count {
             pendingJobs.removeFirst(nextPendingJobIndex)
             nextPendingJobIndex = 0
         }
 
-        return job
+        return (job.id, job.path, reason)
     }
 
     private func subject(for appID: String) -> PassthroughSubject<Void, Never> {
@@ -200,5 +233,15 @@ final class AppIconProvider {
 
     nonisolated private static func maximumBackingScaleFactor() -> CGFloat {
         NSScreen.screens.map(\.backingScaleFactor).max() ?? CachePolicy.fallbackBackingScaleFactor
+    }
+
+    private func trimCache(keeping idsToKeep: Set<String>) {
+        let staleIDs = cachedIDs.subtracting(idsToKeep)
+        guard !staleIDs.isEmpty else { return }
+
+        for id in staleIDs {
+            cache.removeObject(forKey: id as NSString)
+            cachedIDs.remove(id)
+        }
     }
 }

@@ -4,7 +4,6 @@ import os
 
 @MainActor
 final class LauncherStore: ObservableObject {
-    @Published private(set) var allApps: [AppItem] = []
     @Published private(set) var rootEntries: [LauncherEntry] = []
     @Published private(set) var pages: [ArraySlice<LauncherEntry>] = []
     @Published var query = "" {
@@ -42,6 +41,8 @@ final class LauncherStore: ObservableObject {
     private let preferences: LauncherPreferences
     private let logger = Logger(subsystem: "com.icc.launchdeck", category: "Store")
 
+    private var allAppsCount = 0
+    private var catalogAppIDs: [String] = []
     private var pageSize = 35
     private var filteredEntries: [LauncherEntry] = []
     private var searchIndex = LauncherSearchIndex()
@@ -125,7 +126,8 @@ final class LauncherStore: ObservableObject {
             catalogClient.loadApplications()
         }.value
 
-        allApps = loaded
+        allAppsCount = loaded.count
+        catalogAppIDs = loaded.map(\.id)
         rootEntries = LauncherLayoutMerger.merge(apps: loaded, persisted: persistedLayout)
         hasLoadedCatalog = true
         layoutMutationVersion &+= 1
@@ -168,7 +170,7 @@ final class LauncherStore: ObservableObject {
             restoredSession: restoredSession,
             layoutPath: layoutStoragePath,
             sessionPath: sessionStoragePath,
-            allAppsCount: allApps.count,
+            allAppsCount: allAppsCount,
             rootEntries: rootEntries,
             query: query,
             currentPage: currentPage,
@@ -601,8 +603,8 @@ final class LauncherStore: ObservableObject {
             }.value
 
             guard !Task.isCancelled else { return }
-            guard self.allApps.map(\.id) == initialApps.map(\.id) else { return }
-            guard self.allApps != enriched else { return }
+            guard self.catalogAppIDs == initialApps.map(\.id) else { return }
+            guard initialApps != enriched else { return }
 
             self.applyMetadataUpdate(enriched)
         }
@@ -611,7 +613,8 @@ final class LauncherStore: ObservableObject {
     private func applyMetadataUpdate(_ apps: [AppItem]) {
         let appByID = Dictionary(uniqueKeysWithValues: apps.map { ($0.id, $0) })
 
-        allApps = apps
+        allAppsCount = apps.count
+        catalogAppIDs = apps.map(\.id)
         rootEntries = rootEntries.map { entry in
             switch entry {
             case let .app(app):
@@ -743,7 +746,7 @@ final class LauncherStore: ObservableObject {
     }
 
     private func defaultStatusMessage() -> String {
-        rootEntries.isEmpty ? LaunchDeckStrings.noAppsStatus() : LaunchDeckStrings.appCount(allApps.count)
+        rootEntries.isEmpty ? LaunchDeckStrings.noAppsStatus() : LaunchDeckStrings.appCount(allAppsCount)
     }
 
     private func publishStatus(_ message: String, clearingError: Bool = false) {

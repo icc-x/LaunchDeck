@@ -13,6 +13,7 @@ struct ContentView: View {
     @ObservedObject var store: LauncherStore
     @ObservedObject var preferences: LauncherPreferences
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @State private var iconProvider = AppIconProvider()
     @FocusState private var searchFocused: Bool
     @Namespace private var folderNamespace
@@ -151,6 +152,14 @@ struct ContentView: View {
         .onChange(of: preferences.focusSearchOnLaunch) { _, focused in
             if focused {
                 searchFocused = true
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                prefetchVisibleIcons()
+            } else if phase == .background {
+                lastPrefetchKey = ""
+                iconProvider.clearCache()
             }
         }
     }
