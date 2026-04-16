@@ -61,6 +61,7 @@ final class LauncherStore: ObservableObject {
     private var isManagingQueryManually = false
     private var restoredSession: LauncherSessionSnapshot?
     private var stickyReloadError: String?
+    private var sessionPersistenceError: String?
 
     init(
         preferences: LauncherPreferences,
@@ -912,10 +913,15 @@ final class LauncherStore: ObservableObject {
         do {
             try await sessionPersistence.saveAsync(snapshot)
             restoredSession = snapshot
-            lastError = nil
+            if lastError == sessionPersistenceError {
+                lastError = stickyReloadError
+            }
+            sessionPersistenceError = nil
         } catch {
             logger.error("store.session.save_failed error=\(error.localizedDescription, privacy: .public)")
-            lastError = LaunchDeckStrings.sessionSaveFailed(error.localizedDescription)
+            let message = LaunchDeckStrings.sessionSaveFailed(error.localizedDescription)
+            sessionPersistenceError = message
+            lastError = message
         }
     }
 

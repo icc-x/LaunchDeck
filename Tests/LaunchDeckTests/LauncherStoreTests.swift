@@ -308,6 +308,15 @@ final class LauncherStoreTests: XCTestCase {
             )
         )
 
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(
+            store.lastError,
+            LaunchDeckStrings.persistenceIncompatible(
+                version: 99,
+                backupPath: archivedDirectory.appendingPathComponent(archivedFile, isDirectory: false).path
+            )
+        )
+
         let loaded = try persistence.load()
         XCTAssertEqual(loaded?.entries, [
             .app(id: safari.id),
