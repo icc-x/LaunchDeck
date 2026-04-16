@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import ImageIO
+import UniformTypeIdentifiers
 
 @MainActor
 final class AppIconProvider {
@@ -18,6 +20,11 @@ final class AppIconProvider {
         let cost: Int
     }
 
+    private struct RasterizedIconPayload: Sendable {
+        let pngData: Data
+        let cost: Int
+    }
+
     private enum CachePolicy {
         static let countLimit = 160
         static let totalCostLimit = 24 * 1024 * 1024
@@ -28,6 +35,7 @@ final class AppIconProvider {
     private let cache = NSCache<NSString, NSImage>()
     private var iconLoadedSubjects: [String: PassthroughSubject<Void, Never>] = [:]
     private let iconSize: NSSize
+    private let backingScaleFactor: CGFloat
     private var pendingJobs: [IconJob] = []
     private var nextPendingJobIndex = 0
     private var pendingReasons: [String: LoadReason] = [:]
@@ -41,6 +49,7 @@ final class AppIconProvider {
 
     init(iconSize: NSSize = NSSize(width: 72, height: 72)) {
         self.iconSize = iconSize
+        backingScaleFactor = max(Self.maximumBackingScaleFactor(), CachePolicy.fallbackBackingScaleFactor)
         cache.countLimit = CachePolicy.countLimit
         cache.totalCostLimit = CachePolicy.totalCostLimit
     }
@@ -141,8 +150,17 @@ final class AppIconProvider {
                 continue
             }
 
-            let preparedIcon: PreparedIcon = autoreleasepool {
-                makePreparedIcon(forFileAtPath: job.path)
+            let iconSize = self.iconSize
+            let backingScaleFactor = self.backingScaleFactor
+            let preparedIcon: PreparedIcon
+            if let payload = await Self.rasterizedIconPayload(
+                forBundleAtPath: job.path,
+                iconSize: iconSize,
+                backingScaleFactor: backingScaleFactor
+            ) {
+                preparedIcon = makePreparedIcon(from: payload, iconSize: iconSize)
+            } else {
+                preparedIcon = makeWorkspacePreparedIcon(forFileAtPath: job.path)
             }
             cache.setObject(preparedIcon.image, forKey: key, cost: preparedIcon.cost)
             cachedIDs.insert(job.id)
@@ -184,9 +202,48 @@ final class AppIconProvider {
         return created
     }
 
-    private func makePreparedIcon(forFileAtPath path: String) -> PreparedIcon {
+    private func makePreparedIcon(from payload: RasterizedIconPayload, iconSize: NSSize) -> PreparedIcon {
+        if let image = NSImage(data: payload.pngData) {
+            image.size = iconSize
+            return PreparedIcon(image: image, cost: payload.cost)
+        }
+
+        return PreparedIcon(image: placeholderIcon, cost: payload.cost)
+    }
+
+    private func makeWorkspacePreparedIcon(forFileAtPath path: String) -> PreparedIcon {
+        Self.makeWorkspacePreparedIcon(
+            forFileAtPath: path,
+            iconSize: iconSize,
+            backingScaleFactor: backingScaleFactor
+        )
+    }
+
+    nonisolated private static func rasterizedIconPayload(
+        forBundleAtPath path: String,
+        iconSize: NSSize,
+        backingScaleFactor: CGFloat
+    ) async -> RasterizedIconPayload? {
+        await Task.detached(priority: .utility) {
+            autoreleasepool {
+                guard let iconURL = resolveIconFileURL(forBundleAtPath: path) else {
+                    return nil
+                }
+                return rasterizeIconPayload(
+                    from: iconURL,
+                    iconSize: iconSize,
+                    backingScaleFactor: backingScaleFactor
+                )
+            }
+        }.value
+    }
+
+    nonisolated private static func makeWorkspacePreparedIcon(
+        forFileAtPath path: String,
+        iconSize: NSSize,
+        backingScaleFactor: CGFloat
+    ) -> PreparedIcon {
         let sourceImage = NSWorkspace.shared.icon(forFile: path)
-        let backingScaleFactor = max(Self.maximumBackingScaleFactor(), CachePolicy.fallbackBackingScaleFactor)
         let pixelWidth = max(1, Int((iconSize.width * backingScaleFactor).rounded(.up)))
         let pixelHeight = max(1, Int((iconSize.height * backingScaleFactor).rounded(.up)))
         let cost = pixelWidth * pixelHeight * CachePolicy.bytesPerPixel
@@ -226,6 +283,95 @@ final class AppIconProvider {
         let rasterizedImage = NSImage(size: iconSize)
         rasterizedImage.addRepresentation(representation)
         return PreparedIcon(image: rasterizedImage, cost: cost)
+    }
+
+    nonisolated private static func resolveIconFileURL(forBundleAtPath path: String) -> URL? {
+        let bundleURL = URL(fileURLWithPath: path, isDirectory: true)
+        let infoPlistURL = bundleURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("Info.plist", isDirectory: false)
+
+        guard let data = try? Data(contentsOf: infoPlistURL),
+              let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+              let dictionary = plist as? [String: Any] else {
+            return nil
+        }
+
+        let resourcesURL = bundleURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("Resources", isDirectory: true)
+
+        var candidateNames: [String] = []
+        if let iconFile = dictionary["CFBundleIconFile"] as? String {
+            candidateNames.append(iconFile)
+        }
+        if let iconName = dictionary["CFBundleIconName"] as? String {
+            candidateNames.append(iconName)
+        }
+        candidateNames.append("AppIcon")
+
+        for candidate in candidateNames {
+            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+
+            let baseURL = resourcesURL.appendingPathComponent(trimmed, isDirectory: false)
+            if FileManager.default.fileExists(atPath: baseURL.path) {
+                return baseURL
+            }
+
+            if baseURL.pathExtension.isEmpty {
+                let icnsURL = baseURL.appendingPathExtension("icns")
+                if FileManager.default.fileExists(atPath: icnsURL.path) {
+                    return icnsURL
+                }
+            }
+        }
+
+        return nil
+    }
+
+    nonisolated private static func rasterizeIconPayload(
+        from iconURL: URL,
+        iconSize: NSSize,
+        backingScaleFactor: CGFloat
+    ) -> RasterizedIconPayload? {
+        let pixelWidth = max(1, Int((iconSize.width * backingScaleFactor).rounded(.up)))
+        let pixelHeight = max(1, Int((iconSize.height * backingScaleFactor).rounded(.up)))
+        let maxPixelSize = max(pixelWidth, pixelHeight)
+        let cost = pixelWidth * pixelHeight * CachePolicy.bytesPerPixel
+
+        guard let source = CGImageSourceCreateWithURL(iconURL as CFURL, nil) else {
+            return nil
+        }
+
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+
+        let destinationData = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            destinationData,
+            UTType.png.identifier as CFString,
+            1,
+            nil
+        ) else {
+            return nil
+        }
+
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else {
+            return nil
+        }
+
+        return RasterizedIconPayload(
+            pngData: destinationData as Data,
+            cost: cost
+        )
     }
 
     private func makePlaceholderIcon() -> NSImage {

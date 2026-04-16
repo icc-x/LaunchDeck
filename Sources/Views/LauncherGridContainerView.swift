@@ -3,6 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct LauncherGridContainerView: View {
+    let allEntries: [LauncherEntry]
     let entries: ArraySlice<LauncherEntry>
     let isSearchMode: Bool
     let currentPage: Int
@@ -27,6 +28,7 @@ struct LauncherGridContainerView: View {
     var body: some View {
         ZStack {
             AppGridPageView(
+                allEntries: allEntries,
                 entries: entries,
                 isSearchMode: isSearchMode,
                 draggingEntryID: draggingEntryID,

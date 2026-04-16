@@ -260,6 +260,61 @@ final class LauncherStoreTests: XCTestCase {
         XCTAssertEqual(store.statusMessage, LaunchDeckStrings.sessionCleared)
     }
 
+    func testReloadRewritesArchivedIncompatibleLayoutInSameSession() async throws {
+        let fileManager = FileManager.default
+        let directory = makeTemporaryDirectory(fileManager: fileManager)
+        defer { try? fileManager.removeItem(at: directory) }
+
+        let unsupportedPayload = """
+        {
+          "schemaVersion" : 99,
+          "entries" : []
+        }
+        """
+        let persistence = LauncherLayoutPersistence(fileManager: fileManager, baseDirectory: directory)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data(unsupportedPayload.utf8).write(to: persistence.layoutFileURL, options: [.atomic])
+
+        let safari = app("Safari", path: "/Applications/Safari.app")
+        let terminal = app("Terminal", path: "/System/Applications/Utilities/Terminal.app")
+        let preferences = LauncherPreferences(userDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let store = LauncherStore(
+            preferences: preferences,
+            layoutPersistence: persistence,
+            sessionPersistence: LauncherSessionPersistence(fileManager: fileManager, baseDirectory: directory),
+            catalogClient: LauncherCatalogClient(
+                loadApplications: { [safari, terminal] },
+                enrichApplications: { $0 }
+            ),
+            appLauncher: .noop,
+            autoReload: false
+        )
+
+        await store.reload()
+
+        let archivedDirectory = directory.appendingPathComponent("Unsupported", isDirectory: true)
+        let archived = (try? fileManager.contentsOfDirectory(atPath: archivedDirectory.path)) ?? []
+        XCTAssertFalse(archived.isEmpty)
+        guard let archivedFile = archived.first else {
+            XCTFail("expected archived incompatible layout")
+            return
+        }
+
+        XCTAssertEqual(
+            store.lastError,
+            LaunchDeckStrings.persistenceIncompatible(
+                version: 99,
+                backupPath: archivedDirectory.appendingPathComponent(archivedFile, isDirectory: false).path
+            )
+        )
+
+        let loaded = try persistence.load()
+        XCTAssertEqual(loaded?.entries, [
+            .app(id: safari.id),
+            .app(id: terminal.id)
+        ])
+    }
+
     private func app(_ name: String, path: String) -> AppItem {
         AppItem(name: name, url: URL(fileURLWithPath: path), bundleIdentifier: "test.\(name)")
     }

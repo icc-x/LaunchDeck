@@ -189,6 +189,7 @@ struct ContentView: View {
             Spacer()
         } else if store.pages.indices.contains(store.currentPage) {
             LauncherGridContainerView(
+                allEntries: store.rootEntries,
                 entries: store.pages[store.currentPage],
                 isSearchMode: isSearchMode,
                 currentPage: store.currentPage,

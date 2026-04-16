@@ -57,10 +57,10 @@ final class LauncherStore: ObservableObject {
     private var sessionTask: Task<Void, Never>?
     private var layoutMutationVersion: UInt64 = 0
     private var lastPersistedFingerprint: UInt64?
-    private var isPersistenceSuspended = false
     private var hasLoadedCatalog = false
     private var isManagingQueryManually = false
     private var restoredSession: LauncherSessionSnapshot?
+    private var stickyReloadError: String?
 
     init(
         preferences: LauncherPreferences,
@@ -115,8 +115,8 @@ final class LauncherStore: ObservableObject {
         let reloadStart = DispatchTime.now()
         await flushPendingPersistence()
         cancelTransientTasks()
-        isPersistenceSuspended = false
         isLoading = true
+        stickyReloadError = nil
         lastError = nil
         statusMessage = LaunchDeckStrings.scanningStatus()
         lastPersistedFingerprint = nil
@@ -139,9 +139,7 @@ final class LauncherStore: ObservableObject {
         applyFilter(resetPage: true)
         restoreSessionIfNeeded()
 
-        if !isPersistenceSuspended {
-            await persistCurrentLayoutIfNeeded()
-        }
+        await persistCurrentLayoutIfNeeded()
         scheduleSessionPersist()
         startMetadataEnrichmentIfNeeded(initialApps: loaded)
 
@@ -158,9 +156,7 @@ final class LauncherStore: ObservableObject {
         sessionTask?.cancel()
         sessionTask = nil
 
-        if !isPersistenceSuspended {
-            await persistCurrentLayoutIfNeeded()
-        }
+        await persistCurrentLayoutIfNeeded()
         await persistCurrentSessionIfNeeded()
     }
 
@@ -639,12 +635,15 @@ final class LauncherStore: ObservableObject {
         } catch let error as LauncherLayoutPersistenceError {
             switch error {
             case let .incompatibleSchema(version, backupPath):
-                isPersistenceSuspended = true
-                lastError = LaunchDeckStrings.persistenceIncompatible(version: version, backupPath: backupPath)
+                let message = LaunchDeckStrings.persistenceIncompatible(version: version, backupPath: backupPath)
+                stickyReloadError = message
+                lastError = message
             }
             return nil
         } catch {
-            lastError = LaunchDeckStrings.persistenceCorrupted()
+            let message = LaunchDeckStrings.persistenceCorrupted()
+            stickyReloadError = message
+            lastError = message
             return nil
         }
     }
@@ -842,7 +841,6 @@ final class LauncherStore: ObservableObject {
     }
 
     private func scheduleLayoutPersist(delayNanoseconds: UInt64 = 260_000_000) {
-        guard !isPersistenceSuspended else { return }
         persistenceTask?.cancel()
 
         let expectedVersion = layoutMutationVersion
@@ -879,13 +877,14 @@ final class LauncherStore: ObservableObject {
     }
 
     private func persistLayout(snapshot: LauncherLayoutSnapshot, fingerprint: UInt64) async {
-        guard !isPersistenceSuspended else { return }
         guard fingerprint != lastPersistedFingerprint else { return }
 
         do {
             try await layoutPersistence.saveAsync(snapshot)
             lastPersistedFingerprint = fingerprint
-            lastError = nil
+            if stickyReloadError == nil {
+                lastError = nil
+            }
         } catch {
             logger.error("store.layout.save_failed error=\(error.localizedDescription, privacy: .public)")
             lastError = LaunchDeckStrings.persistenceSaveFailed(error.localizedDescription)

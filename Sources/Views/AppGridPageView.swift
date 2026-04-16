@@ -2,6 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct AppGridPageView: View {
+    let allEntries: [LauncherEntry]
     let entries: ArraySlice<LauncherEntry>
     let isSearchMode: Bool
     let draggingEntryID: String?
@@ -85,7 +86,7 @@ struct AppGridPageView: View {
     var body: some View {
         GeometryReader { proxy in
             let metrics = gridMetrics(for: proxy.size)
-            let visibleEntries = Array(entries.prefix(metrics.pageCapacity))
+            let visibleEntries = entries.prefix(metrics.pageCapacity)
             let displaySlots = makeDisplaySlots(from: visibleEntries)
             let visibleEntryIDs = displaySlots.map(\.id)
             LazyVGrid(columns: metrics.columns, spacing: metrics.rowSpacing) {
@@ -205,7 +206,7 @@ struct AppGridPageView: View {
         onPageCapacityChange(capacity)
     }
 
-    private func makeDisplaySlots(from visibleEntries: [LauncherEntry]) -> [GridSlot] {
+    private func makeDisplaySlots(from visibleEntries: ArraySlice<LauncherEntry>) -> [GridSlot] {
         guard let draggingEntryID, let previewInsertionIndex else {
             return visibleEntries.map(GridSlot.entry)
         }
@@ -219,7 +220,7 @@ struct AppGridPageView: View {
 
     private func updatePreview(
         draggingEntryID: String?,
-        visibleEntries: [LauncherEntry],
+        visibleEntries: ArraySlice<LauncherEntry>,
         displaySlots: [GridSlot],
         metrics: GridMetrics,
         location: CGPoint
@@ -260,12 +261,13 @@ struct AppGridPageView: View {
 
     private func performDrop(
         draggingEntryID: String?,
-        visibleEntries: [LauncherEntry],
+        visibleEntries: ArraySlice<LauncherEntry>,
         displaySlots: [GridSlot],
         metrics: GridMetrics,
         location: CGPoint
     ) {
         defer { previewInsertionIndex = nil }
+        guard let draggingEntryID else { return }
 
         switch hoverDestination(
             draggingEntryID: draggingEntryID,
@@ -287,12 +289,26 @@ struct AppGridPageView: View {
                 metrics: metrics,
                 location: location
             ) {
-                onDropToInsertionIndex(insertionIndex)
+                onDropToInsertionIndex(
+                    LauncherRootGridDropResolver.globalInsertionIndex(
+                        allEntries: allEntries,
+                        visibleEntries: visibleEntries,
+                        draggingEntryID: draggingEntryID,
+                        localInsertionIndex: insertionIndex
+                    )
+                )
                 return
             }
         case .placeholder:
             if let previewInsertionIndex {
-                onDropToInsertionIndex(previewInsertionIndex)
+                onDropToInsertionIndex(
+                    LauncherRootGridDropResolver.globalInsertionIndex(
+                        allEntries: allEntries,
+                        visibleEntries: visibleEntries,
+                        draggingEntryID: draggingEntryID,
+                        localInsertionIndex: previewInsertionIndex
+                    )
+                )
                 return
             }
         case .end, .none:
@@ -301,12 +317,19 @@ struct AppGridPageView: View {
 
         let fallbackInsertionIndex = previewInsertionIndex
             ?? visibleEntries.filter { $0.id != draggingEntryID }.count
-        onDropToInsertionIndex(fallbackInsertionIndex)
+        onDropToInsertionIndex(
+            LauncherRootGridDropResolver.globalInsertionIndex(
+                allEntries: allEntries,
+                visibleEntries: visibleEntries,
+                draggingEntryID: draggingEntryID,
+                localInsertionIndex: fallbackInsertionIndex
+            )
+        )
     }
 
     private func hoverDestination(
         draggingEntryID: String?,
-        visibleEntries: [LauncherEntry],
+        visibleEntries: ArraySlice<LauncherEntry>,
         displaySlots: [GridSlot],
         metrics: GridMetrics,
         location: CGPoint
@@ -342,14 +365,18 @@ struct AppGridPageView: View {
             let localLocation = CGPoint(x: localX, y: localY)
             let tileSize = CGSize(width: metrics.tileWidth, height: metrics.tileHeight)
             let canGroup = groupingRect(in: tileSize).contains(localLocation)
-                && LauncherLayoutEditor(entries: visibleEntries).canGroup(draggedID: draggingEntryID, targetID: entry.id)
+                && LauncherRootGridDropResolver.canGroup(
+                    allEntries: allEntries,
+                    draggingEntryID: draggingEntryID,
+                    targetEntry: entry
+                )
             return .entry(entry, localLocation, tileSize, canGroup)
         }
     }
 
     private func insertionIndex(
         draggingEntryID: String?,
-        visibleEntries: [LauncherEntry],
+        visibleEntries: ArraySlice<LauncherEntry>,
         displaySlots: [GridSlot],
         metrics: GridMetrics,
         location: CGPoint
