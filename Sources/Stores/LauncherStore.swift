@@ -253,8 +253,13 @@ final class LauncherStore: ObservableObject {
         let resolved = max(1, newPageSize)
         guard resolved != pageSize else { return }
 
-        let oldPageSize = pageSize
-        let anchorIndex = max(0, currentPage * oldPageSize)
+        // Anchor on the first entry currently visible on `currentPage` so that the user's
+        // viewport follows that entry across the resize, rather than snapping to an index
+        // that happened to line up with the old page stride.
+        let anchorEntryID = pages.indices.contains(currentPage)
+            ? pages[currentPage].first?.id
+            : nil
+
         pageSize = resolved
         applyFilter()
 
@@ -263,7 +268,14 @@ final class LauncherStore: ObservableObject {
             return
         }
 
-        let anchoredPage = min(anchorIndex / resolved, pages.count - 1)
+        let anchoredPage: Int
+        if let anchorEntryID,
+           let newPageIndex = pages.firstIndex(where: { page in page.contains(where: { $0.id == anchorEntryID }) }) {
+            anchoredPage = newPageIndex
+        } else {
+            anchoredPage = min(currentPage, pages.count - 1)
+        }
+
         pageTransitionDirection = anchoredPage >= currentPage ? 1 : -1
         currentPage = anchoredPage
     }
@@ -583,13 +595,15 @@ final class LauncherStore: ObservableObject {
             return
         }
 
+        // Page slots are expressed in post-removal indices because `moveRootEntryToInsertionIndex`
+        // operates on the array *after* the dragged entry has been taken out.
         let pageStart = currentPage * pageSize
         let pageCount = pages[currentPage].count
-        let pageEndExclusive = pageStart + pageCount
-        let targetIndex = direction < 0 ? pageStart : pageEndExclusive
+        let lastSlotOnPage = pageStart + max(0, pageCount - 1)
+        let insertionIndex = direction < 0 ? pageStart : lastSlotOnPage
 
         let didChange = mutateLayout { editor in
-            editor.moveRootEntry(id: draggedID, to: targetIndex)
+            editor.moveRootEntryToInsertionIndex(id: draggedID, insertionIndex: insertionIndex)
         }
 
         if didChange {
@@ -687,9 +701,18 @@ final class LauncherStore: ObservableObject {
             }
         }
 
-        if activeFolder == nil,
-           previousQuery != query || previousPage != currentPage || previousActiveFolderID != activeFolder?.id {
-            publishActionStatus(LaunchDeckStrings.sessionRestored)
+        // Publish a "session restored" status only when we actually changed something
+        // visible to the user and did not land inside a folder (which publishes its own
+        // `folderOpened` status below). Since we are in the `activeFolder == nil` branch,
+        // `activeFolder?.id` is always nil, so `previousActiveFolderID != nil` captures
+        // the "user previously had a folder open" case.
+        if activeFolder == nil {
+            let changedQuery = previousQuery != query
+            let changedPage = previousPage != currentPage
+            let closedFolder = previousActiveFolderID != nil
+            if changedQuery || changedPage || closedFolder {
+                publishActionStatus(LaunchDeckStrings.sessionRestored)
+            }
         }
         logger.info("store.session.restore page=\(self.currentPage, privacy: .public)")
     }

@@ -53,7 +53,7 @@ struct ContentView: View {
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
                 .opacity(store.activeFolder == nil ? 1 : 0.94)
                 .scaleEffect(store.activeFolder == nil ? 1 : 0.995)
-                .animation(LaunchMotion.smooth, value: store.activeFolder != nil)
+                .launchAnimation(LaunchMotion.smooth, value: store.activeFolder != nil)
 
                 VStack {
                     Spacer(minLength: 0)
@@ -89,7 +89,7 @@ struct ContentView: View {
                         namespace: folderNamespace,
                         theme: theme,
                         onClose: {
-                            withAnimation(LaunchMotion.modal) {
+                            withLaunchAnimation(LaunchMotion.modal) {
                                 store.closeFolder()
                             }
                         },
@@ -103,7 +103,7 @@ struct ContentView: View {
                             store.beginFolderDragging(app: app, folderID: folder.id)
                         },
                         onDropToInsertionIndex: { insertionIndex in
-                            withAnimation(LaunchMotion.reorder) {
+                            withLaunchAnimation(LaunchMotion.reorder) {
                                 store.handleFolderDrop(
                                     folderID: folder.id,
                                     toInsertionIndex: insertionIndex
@@ -111,7 +111,7 @@ struct ContentView: View {
                             }
                         },
                         onDropToFolderPageBoundary: { page, direction, pageSize in
-                            withAnimation(LaunchMotion.reorder) {
+                            withLaunchAnimation(LaunchMotion.reorder) {
                                 store.handleFolderDropToPageBoundary(
                                     folderID: folder.id,
                                     currentPage: page,
@@ -121,7 +121,7 @@ struct ContentView: View {
                             }
                         },
                         onDropExtract: {
-                            withAnimation(LaunchMotion.reorder) {
+                            withLaunchAnimation(LaunchMotion.reorder) {
                                 store.extractDraggingFolderAppToRoot()
                             }
                         }
@@ -132,6 +132,19 @@ struct ContentView: View {
                     errorToast(lastError)
                         .padding(.top, 16)
                         .padding(.trailing, 16)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .task(id: lastError) {
+                            // Auto-dismiss after a reasonable read time so that transient
+                            // failures (e.g. a single failed write) don't linger until the
+                            // next successful action clears them.
+                            try? await Task.sleep(nanoseconds: 6_000_000_000)
+                            guard !Task.isCancelled else { return }
+                            if store.lastError == lastError {
+                                withLaunchAnimation(LaunchMotion.quickFade) {
+                                    store.lastError = nil
+                                }
+                            }
+                        }
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
@@ -204,7 +217,7 @@ struct ContentView: View {
                     store.launch(app)
                 },
                 onOpenFolder: { folder in
-                    withAnimation(LaunchMotion.modal) {
+                    withLaunchAnimation(LaunchMotion.modal) {
                         store.openFolder(folder)
                     }
                 },
@@ -212,12 +225,12 @@ struct ContentView: View {
                     store.beginDragging(entry)
                 },
                 onDropOnEntry: { entry, location, size in
-                    withAnimation(LaunchMotion.reorder) {
+                    withLaunchAnimation(LaunchMotion.reorder) {
                         store.handleDrop(on: entry, location: location, tileSize: size)
                     }
                 },
                 onDropToInsertionIndex: { insertionIndex in
-                    withAnimation(LaunchMotion.reorder) {
+                    withLaunchAnimation(LaunchMotion.reorder) {
                         store.handleDrop(toRootInsertionIndex: insertionIndex)
                     }
                 },
@@ -231,7 +244,7 @@ struct ContentView: View {
                     store.clearPageEdgeHover()
                 },
                 onDropAtPageBoundary: { direction in
-                    withAnimation(LaunchMotion.reorder) {
+                    withLaunchAnimation(LaunchMotion.reorder) {
                         store.dropDraggedEntryAtCurrentPageBoundary(direction: direction)
                     }
                 },

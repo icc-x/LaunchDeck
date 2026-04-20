@@ -283,35 +283,64 @@ private struct AppCatalogMetadataCache: Codable {
 }
 
 private struct AppCatalogMetadataCacheStore {
+    private static let logger = Logger(subsystem: "com.icc.launchdeck", category: "CatalogCache")
+
     private let fileManager = FileManager.default
     private let fileName = "app-catalog-cache-v1.json"
 
     func load(localeSignature: String) -> AppCatalogMetadataCache {
         let url = cacheURL()
-        guard let data = try? Data(contentsOf: url) else {
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            let nsError = error as NSError
+            // ENOENT is expected on first launch; anything else is worth flagging.
+            if !(nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileReadNoSuchFileError) {
+                Self.logger.error("catalog cache read failed: \(error.localizedDescription, privacy: .public)")
+            }
             return .empty(localeSignature: localeSignature)
         }
-        guard let cache = try? JSONDecoder().decode(AppCatalogMetadataCache.self, from: data) else {
+
+        do {
+            let cache = try JSONDecoder().decode(AppCatalogMetadataCache.self, from: data)
+            guard cache.schemaVersion == AppCatalogMetadataCache.schemaVersion else {
+                Self.logger.notice(
+                    "catalog cache schema mismatch (have=\(cache.schemaVersion), want=\(AppCatalogMetadataCache.schemaVersion)); discarding"
+                )
+                return .empty(localeSignature: localeSignature)
+            }
+            guard cache.localeSignature == localeSignature else {
+                Self.logger.info(
+                    "catalog cache locale signature changed (have=\(cache.localeSignature, privacy: .public), want=\(localeSignature, privacy: .public)); discarding"
+                )
+                return .empty(localeSignature: localeSignature)
+            }
+            return cache
+        } catch {
+            Self.logger.error("catalog cache decode failed: \(error.localizedDescription, privacy: .public)")
             return .empty(localeSignature: localeSignature)
         }
-        guard cache.schemaVersion == AppCatalogMetadataCache.schemaVersion else {
-            return .empty(localeSignature: localeSignature)
-        }
-        guard cache.localeSignature == localeSignature else {
-            return .empty(localeSignature: localeSignature)
-        }
-        return cache
     }
 
     func save(_ cache: AppCatalogMetadataCache) {
-        guard let data = try? JSONEncoder().encode(cache) else { return }
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(cache)
+        } catch {
+            Self.logger.error("catalog cache encode failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+
         let targetURL = cacheURL()
         let baseDirectory = targetURL.deletingLastPathComponent()
         do {
             try fileManager.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
             try data.write(to: targetURL, options: [.atomic])
         } catch {
-            return
+            Self.logger.error(
+                "catalog cache write failed at \(targetURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 

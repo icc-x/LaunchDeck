@@ -50,13 +50,11 @@ struct LauncherLayoutEditor {
         return true
     }
 
-    @discardableResult
-    mutating func moveRootEntry(id: String, to targetIndex: Int) -> Bool {
-        guard let from = rootIndex(id: id) else { return false }
-        moveRootEntry(from: from, to: targetIndex)
-        return true
-    }
-
+    /// Move a root entry to an absolute position.
+    ///
+    /// `insertionIndex` is interpreted in the **post-removal** array — i.e. after the
+    /// dragged entry has been taken out, where should the caller want it to land.
+    /// Valid range: `0 ... (entries.count - 1)` after removal.
     @discardableResult
     mutating func moveRootEntryToInsertionIndex(id: String, insertionIndex: Int) -> Bool {
         guard let from = rootIndex(id: id) else { return false }
@@ -138,21 +136,10 @@ struct LauncherLayoutEditor {
         }
     }
 
-    mutating func moveFolderApp(
-        folderID: String,
-        draggedAppID: String,
-        to targetIndex: Int
-    ) -> FolderItem? {
-        mutateFolder(id: folderID) { folder in
-            guard let from = folder.apps.firstIndex(where: { $0.id == draggedAppID }) else { return }
-
-            let app = folder.apps.remove(at: from)
-            let clamped = max(0, min(targetIndex, folder.apps.count))
-            let adjusted = from < clamped ? clamped - 1 : clamped
-            folder.apps.insert(app, at: max(0, min(adjusted, folder.apps.count)))
-        }
-    }
-
+    /// Move an app within a folder to an absolute position.
+    ///
+    /// `insertionIndex` follows the same post-removal semantics as
+    /// ``moveRootEntryToInsertionIndex(id:insertionIndex:)``.
     mutating func moveFolderAppToInsertionIndex(
         folderID: String,
         draggedAppID: String,
@@ -196,6 +183,14 @@ struct LauncherLayoutEditor {
         return extractedApp
     }
 
+    /// Compute a value that changes whenever `entries` differs in structurally relevant ways
+    /// (order, IDs, folder membership, folder names).
+    ///
+    /// - Important: This fingerprint is based on `Swift.Hasher`, whose seed is randomized per
+    ///   process launch. The returned value is therefore stable **only within the current
+    ///   process** and **must not** be persisted, transmitted, or compared across runs.
+    ///   It is intended purely as a cheap change detector for in-memory caches (e.g. the
+    ///   persistence scheduler that skips redundant saves).
     static func layoutFingerprint(of entries: [LauncherEntry]) -> UInt64 {
         var hasher = Hasher()
         hasher.combine(entries.count)

@@ -61,7 +61,7 @@ struct LauncherFolderOverlayContainer: View {
                 onLaunch: onLaunch,
                 onBeginDragging: onBeginDragging,
                 onDropToInsertionIndex: onDropToInsertionIndex,
-                onDropToFolderPageBoundary: onDropToFolderPageBoundary,
+                onDropToFolderPageBoundary: onDropToFolderPageBoundary
             )
             .padding(.horizontal, 72)
             .padding(.vertical, 38)
@@ -69,9 +69,9 @@ struct LauncherFolderOverlayContainer: View {
                 insertion: .scale(scale: 0.965).combined(with: .opacity),
                 removal: .scale(scale: 1.015).combined(with: .opacity)
             ))
-            .animation(LaunchMotion.modal, value: folder.id)
+            .launchAnimation(LaunchMotion.modal, value: folder.id)
         }
-        .animation(LaunchMotion.quickFade, value: isDraggingFolderApp)
+        .launchAnimation(LaunchMotion.quickFade, value: isDraggingFolderApp)
     }
 }
 

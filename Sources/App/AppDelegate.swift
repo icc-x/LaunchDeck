@@ -13,13 +13,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var suppressRestoreUntil = Date.distantPast
     private var initializedWindows = Set<ObjectIdentifier>()
     private let logger = Logger(subsystem: "com.icc.launchdeck", category: "Lifecycle")
-    var onWillTerminate: (@MainActor () async -> Void)?
+
+    /// Process-wide termination hook. Installed once from `LaunchDeckApp.init()` so that
+    /// reordering or re-creating Scenes cannot clobber it.
+    private nonisolated(unsafe) static var pendingTerminationHook: (@MainActor () async -> Void)?
+    private var onWillTerminate: (@MainActor () async -> Void)?
+
+    static func installTerminationHook(_ hook: @escaping @MainActor () async -> Void) {
+        pendingTerminationHook = hook
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         installWindowObservers()
         configureAllWindows()
+        onWillTerminate = Self.pendingTerminationHook
         logger.info("app.did_finish_launching window_count=\(NSApp.windows.count, privacy: .public)")
     }
 
@@ -150,7 +159,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     private func isSettingsWindow(_ window: NSWindow) -> Bool {
-        window.identifier == WindowIdentifier.settings || window.title == LaunchDeckStrings.settingsTitle
+        // Match ONLY on our explicit identifier. Title-based matching is fragile across
+        // locale switches because SwiftUI may update the identifier and title on different
+        // run-loop ticks; we assign the identifier in `configureSettingsWindow` before any
+        // other code queries it, so this is authoritative.
+        if window.identifier == WindowIdentifier.settings {
+            return true
+        }
+        // During the very first presentation, the identifier hasn't been set yet — fall back
+        // to the SwiftUI-provided title which uses a stable localized string.
+        return window.title == LaunchDeckStrings.settingsTitle
     }
 
     @MainActor

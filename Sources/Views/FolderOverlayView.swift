@@ -137,7 +137,7 @@ struct FolderOverlayView: View {
                             }
                         }
                         .padding(.vertical, GridLayout.verticalPadding)
-                        .animation(LaunchMotion.reorder, value: visibleAppIDs)
+                        .launchAnimation(LaunchMotion.reorder, value: visibleAppIDs)
                     }
                     .onDrop(
                         of: [UTType.text],
@@ -190,7 +190,7 @@ struct FolderOverlayView: View {
                     Spacer(minLength: 0)
                     ForEach(0..<pagedAppsCache.count, id: \.self) { index in
                         Button {
-                            withAnimation(LaunchMotion.page) {
+                            withLaunchAnimation(LaunchMotion.page) {
                                 currentPage = index
                             }
                         } label: {
@@ -310,12 +310,12 @@ struct FolderOverlayView: View {
         guard now.timeIntervalSince(lastEdgeFlipAt) >= dynamicInterval else { return }
 
         if direction < 0, currentPage > 0 {
-            withAnimation(LaunchMotion.page) {
+            withLaunchAnimation(LaunchMotion.page) {
                 currentPage -= 1
             }
             lastEdgeFlipAt = now
         } else if direction > 0, currentPage < pagedAppsCache.count - 1 {
-            withAnimation(LaunchMotion.page) {
+            withLaunchAnimation(LaunchMotion.page) {
                 currentPage += 1
             }
             lastEdgeFlipAt = now
@@ -350,7 +350,7 @@ struct FolderOverlayView: View {
             return false
         }
 
-        withAnimation(LaunchMotion.page) {
+        withLaunchAnimation(LaunchMotion.page) {
             currentPage = targetPage
         }
         lastWheelFlipAt = now
@@ -662,8 +662,8 @@ private struct FolderAppButton: View {
         .opacity(isBeingDragged ? 0.06 : 1)
         .scaleEffect(isBeingDragged ? 0.92 : (isHovering ? 1.02 : 1))
         .blur(radius: isBeingDragged ? 1.1 : 0)
-        .animation(LaunchMotion.hover, value: isHovering)
-        .animation(LaunchMotion.reorder, value: isBeingDragged)
+        .launchAnimation(LaunchMotion.hover, value: isHovering)
+        .launchAnimation(LaunchMotion.reorder, value: isBeingDragged)
         .onHover { isHovering = $0 }
         .onAppear {
             if iconSubscription == nil {

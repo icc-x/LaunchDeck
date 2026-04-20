@@ -99,8 +99,8 @@ struct LauncherTileView: View {
             radius: isBeingDragged ? 0 : (isHovering ? 6 : 3),
             y: isBeingDragged ? 0 : (isHovering ? 3 : 1)
         )
-        .animation(LaunchMotion.hover, value: isHovering)
-        .animation(LaunchMotion.reorder, value: isBeingDragged)
+        .launchAnimation(LaunchMotion.hover, value: isHovering)
+        .launchAnimation(LaunchMotion.reorder, value: isBeingDragged)
         .help(entry.displayName)
         .accessibilityLabel(entry.displayName)
         .accessibilityHint(accessibilityHint)
@@ -118,13 +118,15 @@ struct LauncherTileView: View {
             iconSubscription = nil
             subscribedIconKey = ""
         }
-        .conditionalModifier(!isSearchMode) { view in
-            view.onDrag {
-                onBeginDragging(entry)
-                return NSItemProvider(object: entry.id as NSString)
-            } preview: {
-                dragPreview
-            }
+        // Always apply `.onDrag`, but veto the drag via an empty item provider when we're in
+        // search mode. Returning different modifier stacks via an `if` would cause SwiftUI to
+        // tear down and re-identify the view on every search-mode toggle.
+        .onDrag {
+            guard !isSearchMode else { return NSItemProvider() }
+            onBeginDragging(entry)
+            return NSItemProvider(object: entry.id as NSString)
+        } preview: {
+            dragPreview
         }
     }
 

@@ -44,7 +44,7 @@ struct LauncherGridContainerView: View {
             )
             .id("page-\(currentPage)")
             .transition(pageTransition)
-            .animation(LaunchMotion.page, value: currentPage)
+            .launchAnimation(LaunchMotion.page, value: currentPage)
             .overlay {
                 if canUseWheelPaging {
                     ScrollWheelCaptureView { event in

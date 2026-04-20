@@ -114,7 +114,7 @@ struct AppGridPageView: View {
             .padding(.vertical, Layout.verticalPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .clipped()
-            .animation(LaunchMotion.reorder, value: visibleEntryIDs)
+            .launchAnimation(LaunchMotion.reorder, value: visibleEntryIDs)
             .onDrop(
                 of: [UTType.text],
                 delegate: PageDropDelegate(

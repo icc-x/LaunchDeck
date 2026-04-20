@@ -9,8 +9,15 @@ struct LaunchDeckApp: App {
 
     init() {
         let preferences = LauncherPreferences()
+        let store = LauncherStore(preferences: preferences)
         _preferences = StateObject(wrappedValue: preferences)
-        _store = StateObject(wrappedValue: LauncherStore(preferences: preferences))
+        _store = StateObject(wrappedValue: store)
+
+        // Install the termination hook exactly once during App construction so that it
+        // cannot be overwritten by a later Scene re-creation (e.g. multi-window future).
+        AppDelegate.installTerminationHook { [weak store] in
+            await store?.flushPendingPersistence()
+        }
     }
 
     private var minimumWindowSize: CGSize {
@@ -24,11 +31,6 @@ struct LaunchDeckApp: App {
                 .preferredColorScheme(preferences.appearanceMode.preferredColorScheme)
                 .onAppear {
                     appDelegate.updateMainWindowMinimumSize()
-                }
-                .task {
-                    appDelegate.onWillTerminate = { [store] in
-                        await store.flushPendingPersistence()
-                    }
                 }
                 .onChange(of: preferences.restoreLastSession) { _, _ in
                     Task {
