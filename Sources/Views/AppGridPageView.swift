@@ -103,8 +103,7 @@ struct AppGridPageView: View {
                             namespace: namespace,
                             onLaunch: onLaunch,
                             onOpenFolder: onOpenFolder,
-                            onBeginDragging: onBeginDragging,
-                            onDrop: onDropOnEntry
+                            onBeginDragging: onBeginDragging
                         )
                     case .placeholder:
                         LauncherTilePlaceholderView(tileWidth: metrics.tileWidth)

@@ -58,7 +58,8 @@
 "footer.results_count" = "搜索结果 %ld 项";
 "status.scanning" = "正在扫描本机应用...";
 "status.no_apps" = "未发现可展示的应用。";
-"status.editing" = "编辑模式：拖拽可重排或分组";
+"a11y.hint.launch_app" = "启动应用";
+"a11y.hint.open_folder" = "打开文件夹";
 "status.folder_opened" = "已打开文件夹：%@";
 "status.folder_renamed" = "已将文件夹重命名为 %@";
 "status.folder_reordered" = "已在 %@ 内重排";

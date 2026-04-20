@@ -40,7 +40,6 @@ final class LauncherDiagnosticsServiceTests: XCTestCase {
             currentPage: 1,
             pagesCount: 2,
             activeFolder: folder,
-            isEditing: false,
             isLoading: false,
             lastError: nil,
             statusMessage: "ok"

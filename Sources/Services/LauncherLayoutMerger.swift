@@ -7,7 +7,7 @@ struct LauncherLayoutMerger {
             return apps.map(LauncherEntry.app)
         }
 
-        let appByID = Dictionary(uniqueKeysWithValues: apps.map { ($0.id, $0) })
+        let appByID = Dictionary(apps.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var usedAppIDs = Set<String>()
         var mergedEntries: [LauncherEntry] = []
         mergedEntries.reserveCapacity(max(persisted.entries.count, apps.count))

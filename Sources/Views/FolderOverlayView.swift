@@ -642,20 +642,23 @@ private struct FolderAppButton: View {
 
     var body: some View {
         let _ = iconReloadToken
-        VStack(spacing: 8) {
-            Image(nsImage: iconProvider.icon(for: app))
-                .resizable()
-                .interpolation(.high)
-                .frame(width: 70, height: 70)
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(nsImage: iconProvider.icon(for: app))
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 70, height: 70)
 
-            Text(app.name)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(theme.textPrimary)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 96)
+                Text(app.name)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(theme.textPrimary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 96)
+            }
+            .contentShape(Rectangle())
         }
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
         .opacity(isBeingDragged ? 0.06 : 1)
         .scaleEffect(isBeingDragged ? 0.92 : (isHovering ? 1.02 : 1))
         .blur(radius: isBeingDragged ? 1.1 : 0)
@@ -676,9 +679,7 @@ private struct FolderAppButton: View {
         }
         .help(app.name)
         .accessibilityLabel(app.name)
-        .onTapGesture {
-            action()
-        }
+        .accessibilityHint(LaunchDeckStrings.accessibilityHintLaunchApp)
         .onDrag {
             onBeginDragging()
             return NSItemProvider(object: "folder:\(app.id)" as NSString)

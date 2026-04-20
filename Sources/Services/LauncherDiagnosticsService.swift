@@ -21,7 +21,6 @@ struct LauncherDiagnosticsReport: Codable, Sendable {
         var totalPages: Int
         var activeFolderID: String?
         var activeFolderName: String?
-        var isEditing: Bool
         var isLoading: Bool
         var lastError: String?
         var statusMessage: String
@@ -59,7 +58,6 @@ struct LauncherDiagnosticsService {
         currentPage: Int,
         pagesCount: Int,
         activeFolder: FolderItem?,
-        isEditing: Bool,
         isLoading: Bool,
         lastError: String?,
         statusMessage: String
@@ -92,7 +90,6 @@ struct LauncherDiagnosticsService {
                 totalPages: pagesCount,
                 activeFolderID: activeFolder?.id,
                 activeFolderName: activeFolder?.name,
-                isEditing: isEditing,
                 isLoading: isLoading,
                 lastError: lastError,
                 statusMessage: statusMessage

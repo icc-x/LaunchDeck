@@ -20,7 +20,6 @@ final class LauncherStore: ObservableObject {
         }
     }
     @Published private(set) var pageTransitionDirection = 1
-    @Published private(set) var isEditing = false
     @Published private(set) var isLoading = false
     @Published private(set) var statusMessage = LaunchDeckStrings.scanningStatus()
     @Published var lastError: String?
@@ -173,7 +172,6 @@ final class LauncherStore: ObservableObject {
             currentPage: currentPage,
             pagesCount: pages.count,
             activeFolder: activeFolder,
-            isEditing: isEditing,
             isLoading: isLoading,
             lastError: lastError,
             statusMessage: statusMessage
@@ -268,21 +266,6 @@ final class LauncherStore: ObservableObject {
         let anchoredPage = min(anchorIndex / resolved, pages.count - 1)
         pageTransitionDirection = anchoredPage >= currentPage ? 1 : -1
         currentPage = anchoredPage
-    }
-
-    func enterEditMode() {
-        guard queryKeyword.isEmpty else { return }
-        if !isEditing {
-            isEditing = true
-            publishActionStatus(LaunchDeckStrings.editingStatus())
-        }
-    }
-
-    func exitEditMode() {
-        guard isEditing else { return }
-        isEditing = false
-        clearDragging()
-        publishActionStatus(activeFolder.map { LaunchDeckStrings.folderOpened($0.name) } ?? defaultStatusMessage())
     }
 
     func openFolder(_ folder: FolderItem) {
@@ -667,7 +650,7 @@ final class LauncherStore: ObservableObject {
     }
 
     private func applyMetadataUpdate(_ apps: [AppItem]) {
-        let appByID = Dictionary(uniqueKeysWithValues: apps.map { ($0.id, $0) })
+        let appByID = Dictionary(apps.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         allAppsCount = apps.count
         catalogAppIDs = apps.map(\.id)
@@ -757,9 +740,6 @@ final class LauncherStore: ObservableObject {
             filteredResultsCount = filteredEntries.count
             pages = LauncherPaging.chunked(filteredEntries, pageSize: pageSize)
 
-            if isEditing {
-                isEditing = false
-            }
             if activeFolder != nil {
                 activeFolder = nil
             }

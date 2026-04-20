@@ -58,7 +58,8 @@
 "footer.results_count" = "%ld search results";
 "status.scanning" = "Scanning local applications...";
 "status.no_apps" = "No apps available to display.";
-"status.editing" = "Edit mode: drag to reorder or group";
+"a11y.hint.launch_app" = "Launch app";
+"a11y.hint.open_folder" = "Open folder";
 "status.folder_opened" = "Opened folder: %@";
 "status.folder_renamed" = "Renamed folder to %@";
 "status.folder_reordered" = "Reordered apps in %@";

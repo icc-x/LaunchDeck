@@ -85,8 +85,12 @@ enum LaunchDeckStrings {
         localizedString(forKey: "status.no_apps", defaultValue: "未发现可展示的应用。")
     }
 
-    static func editingStatus() -> String {
-        localizedString(forKey: "status.editing", defaultValue: "编辑模式：拖拽可重排或分组")
+    static var accessibilityHintLaunchApp: String {
+        localizedString(forKey: "a11y.hint.launch_app", defaultValue: "启动应用")
+    }
+
+    static var accessibilityHintOpenFolder: String {
+        localizedString(forKey: "a11y.hint.open_folder", defaultValue: "打开文件夹")
     }
 
     static func folderOpened(_ name: String) -> String {
@@ -198,9 +202,10 @@ enum LaunchDeckStrings {
         let availableLocalizations = bundle.localizations
         guard !availableLocalizations.isEmpty else { return nil }
 
-        let availableByNormalizedIdentifier = Dictionary(uniqueKeysWithValues: availableLocalizations.map {
-            (normalizeLocalizationIdentifier($0), $0)
-        })
+        let availableByNormalizedIdentifier = Dictionary(
+            availableLocalizations.map { (normalizeLocalizationIdentifier($0), $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
 
         for candidate in localizationCandidates(from: preferredLanguages) {
             if let match = availableByNormalizedIdentifier[normalizeLocalizationIdentifier(candidate)] {

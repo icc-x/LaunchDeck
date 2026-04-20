@@ -14,7 +14,6 @@ struct LauncherTileView: View {
     let onLaunch: (AppItem) -> Void
     let onOpenFolder: (FolderItem) -> Void
     let onBeginDragging: (LauncherEntry) -> Void
-    let onDrop: (LauncherEntry, CGPoint, CGSize) -> Void
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var isHovering = false
@@ -78,17 +77,20 @@ struct LauncherTileView: View {
 
     var body: some View {
         let _ = iconReloadToken
-        VStack(spacing: metrics.iconToLabelSpacing) {
-            iconSurface
-            Text(entry.displayName)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(theme.textPrimary)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: metrics.labelMaxWidth)
+        Button(action: handleTap) {
+            VStack(spacing: metrics.iconToLabelSpacing) {
+                iconSurface
+                Text(entry.displayName)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(theme.textPrimary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: metrics.labelMaxWidth)
+            }
+            .frame(width: tileSize.width, height: tileSize.height)
+            .contentShape(Rectangle())
         }
-        .frame(width: tileSize.width, height: tileSize.height)
-        .contentShape(Rectangle())
+        .buttonStyle(.plain)
         .opacity(isBeingDragged ? 0.06 : 1)
         .scaleEffect(isBeingDragged ? 0.92 : (isHovering ? 1.03 : 1))
         .blur(radius: isBeingDragged ? 1.2 : 0)
@@ -101,9 +103,7 @@ struct LauncherTileView: View {
         .animation(LaunchMotion.reorder, value: isBeingDragged)
         .help(entry.displayName)
         .accessibilityLabel(entry.displayName)
-        .onTapGesture {
-            handleTap()
-        }
+        .accessibilityHint(accessibilityHint)
         .onHover { hovering in
             isHovering = hovering
         }
@@ -125,6 +125,15 @@ struct LauncherTileView: View {
             } preview: {
                 dragPreview
             }
+        }
+    }
+
+    private var accessibilityHint: String {
+        switch entry {
+        case .app:
+            return LaunchDeckStrings.accessibilityHintLaunchApp
+        case .folder:
+            return LaunchDeckStrings.accessibilityHintOpenFolder
         }
     }
 
