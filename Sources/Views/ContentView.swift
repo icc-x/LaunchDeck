@@ -262,7 +262,7 @@ struct ContentView: View {
         guard store.activeFolder == nil, store.pages.count > 1 else { return false }
 
         let now = Date()
-        guard now.timeIntervalSince(lastWheelFlipAt) >= 0.16 else { return false }
+        guard now.timeIntervalSince(lastWheelFlipAt) >= LauncherTuning.WheelPaging.minimumInterval else { return false }
 
         guard let targetPage = WheelPageResolver.targetPage(
             currentPage: store.currentPage,

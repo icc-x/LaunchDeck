@@ -47,9 +47,7 @@ final class LauncherStore: ObservableObject {
     private var filteredResultsCount = 0
     private var searchIndex = LauncherSearchIndex()
     private var draggingFolderID: String?
-    private var edgeHoverDirection: Int?
-    private var edgeHoverStartedAt = Date.distantPast
-    private var lastEdgeFlipAt = Date.distantPast
+    private var edgeScroller = EdgePageScroller()
     private var persistenceTask: Task<Void, Never>?
     private var filterTask: Task<Void, Never>?
     private var metadataEnrichmentTask: Task<Void, Never>?
@@ -352,7 +350,7 @@ final class LauncherStore: ObservableObject {
             return
         }
 
-        let groupZone = groupingRect(in: tileSize)
+        let groupZone = LauncherTuning.Grouping.rect(in: tileSize)
         let draggedName = layoutEditor().rootEntry(id: draggedID)?.displayName ?? ""
         let isGrouping = groupZone.contains(location)
         let placeAfterTarget = shouldPlaceDraggedEntryAfterTarget(location: location, tileSize: tileSize)
@@ -552,33 +550,17 @@ final class LauncherStore: ObservableObject {
         guard draggingEntryID != nil else { return }
         guard !pages.isEmpty else { return }
 
-        let now = Date()
-        if edgeHoverDirection != direction {
-            edgeHoverDirection = direction
-            edgeHoverStartedAt = now
-            lastEdgeFlipAt = now
-            return
-        }
-
-        let hoverElapsed = now.timeIntervalSince(edgeHoverStartedAt)
-        guard hoverElapsed >= 0.20 else { return }
-
-        let dynamicInterval = max(0.08, 0.34 - hoverElapsed * 0.22)
-        guard now.timeIntervalSince(lastEdgeFlipAt) >= dynamicInterval else { return }
+        guard edgeScroller.hover(direction: direction) else { return }
 
         if direction < 0, currentPage > 0 {
             goToPage(currentPage - 1)
-            lastEdgeFlipAt = now
         } else if direction > 0, currentPage < pages.count - 1 {
             goToPage(currentPage + 1)
-            lastEdgeFlipAt = now
         }
     }
 
     func clearPageEdgeHover() {
-        edgeHoverDirection = nil
-        edgeHoverStartedAt = Date.distantPast
-        lastEdgeFlipAt = Date.distantPast
+        edgeScroller.reset()
     }
 
     func dropDraggedEntryAtCurrentPageBoundary(direction: Int) {
@@ -735,7 +717,7 @@ final class LauncherStore: ObservableObject {
         let querySnapshot = query
         let delayNanoseconds: UInt64 = immediate || querySnapshot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? 0
-            : 160_000_000
+            : LauncherTuning.Debounce.searchFilter
 
         filterTask = Task { @MainActor in
             if delayNanoseconds > 0 {
@@ -797,17 +779,6 @@ final class LauncherStore: ObservableObject {
         self.activeFolder = layoutEditor().currentFolder(id: activeFolder.id)
     }
 
-    private func groupingRect(in size: CGSize) -> CGRect {
-        let width = min(84, size.width * 0.76)
-        let height = min(90, size.height * 0.68)
-        return CGRect(
-            x: (size.width - width) * 0.5,
-            y: 4,
-            width: width,
-            height: height
-        )
-    }
-
     private func shouldPlaceDraggedEntryAfterTarget(location: CGPoint, tileSize: CGSize) -> Bool {
         guard tileSize.width > 0 else { return false }
         return location.x >= tileSize.width * 0.5
@@ -844,7 +815,7 @@ final class LauncherStore: ObservableObject {
         return true
     }
 
-    private func scheduleLayoutPersist(delayNanoseconds: UInt64 = 260_000_000) {
+    private func scheduleLayoutPersist(delayNanoseconds: UInt64 = LauncherTuning.Debounce.layoutPersist) {
         persistenceTask?.cancel()
 
         let expectedVersion = layoutMutationVersion
@@ -895,7 +866,7 @@ final class LauncherStore: ObservableObject {
         }
     }
 
-    private func scheduleSessionPersist(delayNanoseconds: UInt64 = 180_000_000) {
+    private func scheduleSessionPersist(delayNanoseconds: UInt64 = LauncherTuning.Debounce.sessionPersist) {
         guard preferences.restoreLastSession, hasLoadedCatalog else { return }
         sessionTask?.cancel()
         let snapshot = makeSessionSnapshot()

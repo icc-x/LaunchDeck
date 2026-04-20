@@ -24,9 +24,7 @@ struct FolderOverlayView: View {
     @State private var editingName = ""
     @FocusState private var isNameFocused: Bool
     @State private var currentPage = 0
-    @State private var edgeHoverDirection: Int?
-    @State private var edgeHoverStartedAt = Date.distantPast
-    @State private var lastEdgeFlipAt = Date.distantPast
+    @State private var edgeScroller = EdgePageScroller()
     @State private var lastWheelFlipAt = Date.distantPast
     @State private var pagedAppsCache: [ArraySlice<AppItem>] = []
     @State private var folderBadgeReloadToken = 0
@@ -294,38 +292,21 @@ struct FolderOverlayView: View {
     }
 
     private func handleEdgeHover(direction: Int) {
-        let now = Date()
-
-        if edgeHoverDirection != direction {
-            edgeHoverDirection = direction
-            edgeHoverStartedAt = now
-            lastEdgeFlipAt = now
-            return
-        }
-
-        let hoverElapsed = now.timeIntervalSince(edgeHoverStartedAt)
-        guard hoverElapsed >= 0.20 else { return }
-
-        let dynamicInterval = max(0.08, 0.34 - hoverElapsed * 0.22)
-        guard now.timeIntervalSince(lastEdgeFlipAt) >= dynamicInterval else { return }
+        guard edgeScroller.hover(direction: direction) else { return }
 
         if direction < 0, currentPage > 0 {
             withLaunchAnimation(LaunchMotion.page) {
                 currentPage -= 1
             }
-            lastEdgeFlipAt = now
         } else if direction > 0, currentPage < pagedAppsCache.count - 1 {
             withLaunchAnimation(LaunchMotion.page) {
                 currentPage += 1
             }
-            lastEdgeFlipAt = now
         }
     }
 
     private func clearEdgeHoverState() {
-        edgeHoverDirection = nil
-        edgeHoverStartedAt = Date.distantPast
-        lastEdgeFlipAt = Date.distantPast
+        edgeScroller.reset()
     }
 
     private func clampFolderPage() {
@@ -340,7 +321,7 @@ struct FolderOverlayView: View {
         guard pagedAppsCache.count > 1 else { return false }
 
         let now = Date()
-        guard now.timeIntervalSince(lastWheelFlipAt) >= 0.16 else { return false }
+        guard now.timeIntervalSince(lastWheelFlipAt) >= LauncherTuning.WheelPaging.minimumInterval else { return false }
 
         guard let targetPage = WheelPageResolver.targetPage(
             currentPage: currentPage,

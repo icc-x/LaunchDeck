@@ -363,7 +363,7 @@ struct AppGridPageView: View {
             guard entry.id != draggingEntryID else { return .placeholder }
             let localLocation = CGPoint(x: localX, y: localY)
             let tileSize = CGSize(width: metrics.tileWidth, height: metrics.tileHeight)
-            let canGroup = groupingRect(in: tileSize).contains(localLocation)
+            let canGroup = LauncherTuning.Grouping.rect(in: tileSize).contains(localLocation)
                 && LauncherRootGridDropResolver.canGroup(
                     allEntries: allEntries,
                     draggingEntryID: draggingEntryID,
@@ -408,16 +408,6 @@ struct AppGridPageView: View {
         }
     }
 
-    private func groupingRect(in size: CGSize) -> CGRect {
-        let width = min(84, size.width * 0.76)
-        let height = min(90, size.height * 0.68)
-        return CGRect(
-            x: (size.width - width) * 0.5,
-            y: 4,
-            width: width,
-            height: height
-        )
-    }
 }
 
 private enum GridHoverDestination {
