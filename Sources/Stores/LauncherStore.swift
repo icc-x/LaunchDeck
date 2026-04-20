@@ -34,10 +34,9 @@ final class LauncherStore: ObservableObject {
 
     private let appLauncher: AppLaunchClient
     private let catalogClient: LauncherCatalogClient
-    private let layoutPersistence: LauncherLayoutPersistence
-    private let sessionPersistence: LauncherSessionPersistence
     private let diagnosticsService: LauncherDiagnosticsService
     private let preferences: LauncherPreferences
+    private let persistenceScheduler: LauncherPersistenceScheduler
     private let logger = Logger(subsystem: "com.icc.launchdeck", category: "Store")
 
     private var allAppsCount = 0
@@ -48,12 +47,8 @@ final class LauncherStore: ObservableObject {
     private var searchIndex = LauncherSearchIndex()
     private var draggingFolderID: String?
     private var edgeScroller = EdgePageScroller()
-    private var persistenceTask: Task<Void, Never>?
     private var filterTask: Task<Void, Never>?
     private var metadataEnrichmentTask: Task<Void, Never>?
-    private var sessionTask: Task<Void, Never>?
-    private var layoutMutationVersion: UInt64 = 0
-    private var lastPersistedFingerprint: UInt64?
     private var hasLoadedCatalog = false
     private var isManagingQueryManually = false
     private var restoredSession: LauncherSessionSnapshot?
@@ -70,12 +65,14 @@ final class LauncherStore: ObservableObject {
         autoReload: Bool = true
     ) {
         self.preferences = preferences
-        self.layoutPersistence = layoutPersistence
-        self.sessionPersistence = sessionPersistence
+        self.persistenceScheduler = LauncherPersistenceScheduler(
+            layoutPersistence: layoutPersistence,
+            sessionPersistence: sessionPersistence
+        )
         self.diagnosticsService = diagnosticsService
         self.catalogClient = catalogClient
         self.appLauncher = appLauncher
-        restoredSession = preferences.restoreLastSession ? sessionPersistence.load() : nil
+        restoredSession = preferences.restoreLastSession ? self.persistenceScheduler.loadSession() : nil
 
         if autoReload {
             Task { await reload() }
@@ -102,11 +99,11 @@ final class LauncherStore: ObservableObject {
     }
 
     var layoutStoragePath: String {
-        layoutPersistence.storagePath
+        persistenceScheduler.layoutStoragePath
     }
 
     var sessionStoragePath: String {
-        sessionPersistence.storagePath
+        persistenceScheduler.sessionStoragePath
     }
 
     func reload() async {
@@ -117,7 +114,7 @@ final class LauncherStore: ObservableObject {
         stickyReloadError = nil
         lastError = nil
         statusMessage = LaunchDeckStrings.scanningStatus()
-        lastPersistedFingerprint = nil
+        persistenceScheduler.invalidate()
 
         let persistedLayout = await loadPersistedLayout()
         let loaded = await Task.detached(priority: .userInitiated) { [catalogClient] in
@@ -128,7 +125,7 @@ final class LauncherStore: ObservableObject {
         catalogAppIDs = loaded.map(\.id)
         rootEntries = LauncherLayoutMerger.merge(apps: loaded, persisted: persistedLayout)
         hasLoadedCatalog = true
-        layoutMutationVersion &+= 1
+        persistenceScheduler.noteLayoutMutation()
         searchIndex.markDirty()
         activeFolder = nil
         clearDragging()
@@ -137,7 +134,7 @@ final class LauncherStore: ObservableObject {
         applyFilter(resetPage: true)
         restoreSessionIfNeeded()
 
-        await persistCurrentLayoutIfNeeded()
+        await flushLayoutNow()
         scheduleSessionPersist()
         startMetadataEnrichmentIfNeeded(initialApps: loaded)
 
@@ -149,13 +146,12 @@ final class LauncherStore: ObservableObject {
 
     func flushPendingPersistence() async {
         guard hasLoadedCatalog else { return }
-        persistenceTask?.cancel()
-        persistenceTask = nil
-        sessionTask?.cancel()
-        sessionTask = nil
+        persistenceScheduler.cancelPending()
 
-        await persistCurrentLayoutIfNeeded()
-        await persistCurrentSessionIfNeeded()
+        await flushLayoutNow()
+        if preferences.restoreLastSession {
+            await flushSessionNow()
+        }
     }
 
     func exportDiagnostics() async {
@@ -189,11 +185,9 @@ final class LauncherStore: ObservableObject {
     }
 
     func clearRestoredSession() async {
-        sessionTask?.cancel()
-        sessionTask = nil
         restoredSession = nil
         do {
-            try await sessionPersistence.deleteAsync()
+            try await persistenceScheduler.deleteSession()
             publishActionStatus(LaunchDeckStrings.sessionCleared)
             logger.info("store.session.cleared")
         } catch {
@@ -204,7 +198,7 @@ final class LauncherStore: ObservableObject {
 
     func handleRestoreLastSessionPreferenceChange() async {
         if preferences.restoreLastSession {
-            restoredSession = sessionPersistence.load()
+            restoredSession = persistenceScheduler.loadSession()
             restoreSessionIfNeeded()
             scheduleSessionPersist()
         } else {
@@ -597,21 +591,16 @@ final class LauncherStore: ObservableObject {
     }
 
     private func cancelTransientTasks() {
-        persistenceTask?.cancel()
-        persistenceTask = nil
+        persistenceScheduler.cancelPending()
         filterTask?.cancel()
         filterTask = nil
         metadataEnrichmentTask?.cancel()
         metadataEnrichmentTask = nil
-        sessionTask?.cancel()
-        sessionTask = nil
     }
 
     private func loadPersistedLayout() async -> LauncherLayoutSnapshot? {
         do {
-            return try await Task.detached(priority: .utility) { [layoutPersistence] in
-                try layoutPersistence.load()
-            }.value
+            return try await persistenceScheduler.loadPersistedLayout()
         } catch let error as LauncherLayoutPersistenceError {
             switch error {
             case let .incompatibleSchema(version, backupPath):
@@ -810,93 +799,77 @@ final class LauncherStore: ObservableObject {
         guard didChange else { return false }
 
         rootEntries = editor.entries
-        layoutMutationVersion &+= 1
+        persistenceScheduler.noteLayoutMutation()
         searchIndex.markDirty()
         return true
     }
 
     private func scheduleLayoutPersist(delayNanoseconds: UInt64 = LauncherTuning.Debounce.layoutPersist) {
-        persistenceTask?.cancel()
-
-        let expectedVersion = layoutMutationVersion
         let snapshot = LauncherLayoutSnapshot(rootEntries: rootEntries)
         let fingerprint = LauncherLayoutEditor.layoutFingerprint(of: rootEntries)
 
-        persistenceTask = Task { [weak self, snapshot, fingerprint, expectedVersion] in
-            try? await Task.sleep(nanoseconds: delayNanoseconds)
-            guard !Task.isCancelled else { return }
-            await self?.persistScheduledLayout(
-                snapshot: snapshot,
-                fingerprint: fingerprint,
-                expectedVersion: expectedVersion
-            )
-        }
+        persistenceScheduler.scheduleLayoutWrite(
+            snapshot: snapshot,
+            fingerprint: fingerprint,
+            delayNanoseconds: delayNanoseconds,
+            onSuccess: { [weak self] in self?.handleLayoutPersistSucceeded() },
+            onFailure: { [weak self] message in self?.handleLayoutPersistFailed(message: message) }
+        )
     }
 
-    private func persistScheduledLayout(
-        snapshot: LauncherLayoutSnapshot,
-        fingerprint: UInt64,
-        expectedVersion: UInt64
-    ) async {
-        guard expectedVersion == layoutMutationVersion else { return }
-        await persistLayout(snapshot: snapshot, fingerprint: fingerprint)
-        if expectedVersion == layoutMutationVersion {
-            persistenceTask = nil
-        }
-    }
-
-    private func persistCurrentLayoutIfNeeded() async {
+    private func flushLayoutNow() async {
         let snapshot = LauncherLayoutSnapshot(rootEntries: rootEntries)
         let fingerprint = LauncherLayoutEditor.layoutFingerprint(of: rootEntries)
-        await persistLayout(snapshot: snapshot, fingerprint: fingerprint)
+        await persistenceScheduler.flushLayout(
+            snapshot: snapshot,
+            fingerprint: fingerprint,
+            onSuccess: { [weak self] in self?.handleLayoutPersistSucceeded() },
+            onFailure: { [weak self] message in self?.handleLayoutPersistFailed(message: message) }
+        )
     }
 
-    private func persistLayout(snapshot: LauncherLayoutSnapshot, fingerprint: UInt64) async {
-        guard fingerprint != lastPersistedFingerprint else { return }
-
-        do {
-            try await layoutPersistence.saveAsync(snapshot)
-            lastPersistedFingerprint = fingerprint
-            if stickyReloadError == nil {
-                lastError = nil
-            }
-        } catch {
-            logger.error("store.layout.save_failed error=\(error.localizedDescription, privacy: .public)")
-            lastError = LaunchDeckStrings.persistenceSaveFailed(error.localizedDescription)
+    private func handleLayoutPersistSucceeded() {
+        if stickyReloadError == nil {
+            lastError = nil
         }
+    }
+
+    private func handleLayoutPersistFailed(message: String) {
+        lastError = message
     }
 
     private func scheduleSessionPersist(delayNanoseconds: UInt64 = LauncherTuning.Debounce.sessionPersist) {
         guard preferences.restoreLastSession, hasLoadedCatalog else { return }
-        sessionTask?.cancel()
         let snapshot = makeSessionSnapshot()
-
-        sessionTask = Task { [weak self, snapshot] in
-            try? await Task.sleep(nanoseconds: delayNanoseconds)
-            guard !Task.isCancelled else { return }
-            await self?.persistSession(snapshot)
-        }
+        persistenceScheduler.scheduleSessionWrite(
+            snapshot: snapshot,
+            delayNanoseconds: delayNanoseconds,
+            onSuccess: { [weak self] written in self?.handleSessionPersistSucceeded(snapshot: written) },
+            onFailure: { [weak self] message in self?.handleSessionPersistFailed(message: message) }
+        )
     }
 
-    private func persistCurrentSessionIfNeeded() async {
+    private func flushSessionNow() async {
         guard preferences.restoreLastSession, hasLoadedCatalog else { return }
-        await persistSession(makeSessionSnapshot())
+        let snapshot = makeSessionSnapshot()
+        await persistenceScheduler.flushSession(
+            snapshot: snapshot,
+            onSuccess: { [weak self] written in self?.handleSessionPersistSucceeded(snapshot: written) },
+            onFailure: { [weak self] message in self?.handleSessionPersistFailed(message: message) }
+        )
     }
 
-    private func persistSession(_ snapshot: LauncherSessionSnapshot) async {
-        do {
-            try await sessionPersistence.saveAsync(snapshot)
-            restoredSession = snapshot
-            if lastError == sessionPersistenceError {
-                lastError = stickyReloadError
-            }
-            sessionPersistenceError = nil
-        } catch {
-            logger.error("store.session.save_failed error=\(error.localizedDescription, privacy: .public)")
-            let message = LaunchDeckStrings.sessionSaveFailed(error.localizedDescription)
-            sessionPersistenceError = message
-            lastError = message
+    private func handleSessionPersistSucceeded(snapshot: LauncherSessionSnapshot) {
+        restoredSession = snapshot
+        if lastError == sessionPersistenceError {
+            lastError = stickyReloadError
         }
+        sessionPersistenceError = nil
+    }
+
+    private func handleSessionPersistFailed(message: String) {
+        sessionPersistenceError = message
+        lastError = message
     }
 
     private func makeSessionSnapshot() -> LauncherSessionSnapshot {

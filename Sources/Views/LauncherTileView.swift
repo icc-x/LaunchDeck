@@ -255,3 +255,35 @@ struct LauncherTileView: View {
         }
     }
 }
+
+private struct LauncherTilePreviewHost: View {
+    let entry: LauncherEntry
+    @Namespace private var namespace
+
+    var body: some View {
+        LauncherTileView(
+            entry: entry,
+            tileWidth: 112,
+            iconProvider: AppIconProvider(),
+            folderPreviewIconProvider: AppIconProvider(),
+            isSearchMode: false,
+            isBeingDragged: false,
+            namespace: namespace,
+            onLaunch: { _ in },
+            onOpenFolder: { _ in },
+            onBeginDragging: { _ in }
+        )
+    }
+}
+
+#Preview("Tile — app") {
+    LauncherTilePreviewHost(entry: .app(LaunchDeckPreviewFixtures.safari))
+        .padding(32)
+        .background(LaunchpadBackdrop())
+}
+
+#Preview("Tile — folder") {
+    LauncherTilePreviewHost(entry: .folder(LaunchDeckPreviewFixtures.utilitiesFolder))
+        .padding(32)
+        .background(LaunchpadBackdrop())
+}

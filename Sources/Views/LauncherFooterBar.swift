@@ -44,3 +44,37 @@ struct LauncherFooterBar: View {
         }
     }
 }
+
+#Preview("Footer — 3 pages") {
+    LauncherFooterBar(
+        statusMessage: "42 apps",
+        pagesCount: 3,
+        currentPage: 1,
+        showDetails: true,
+        detailText: "Page 2 of 3",
+        pageIndicatorActive: .accentColor,
+        pageIndicatorInactive: .secondary.opacity(0.4),
+        textSecondary: .secondary,
+        onGoToPage: { _ in }
+    )
+    .padding()
+    .frame(width: 480)
+    .background(LaunchpadBackdrop())
+}
+
+#Preview("Footer — single page") {
+    LauncherFooterBar(
+        statusMessage: "Scanning…",
+        pagesCount: 1,
+        currentPage: 0,
+        showDetails: false,
+        detailText: nil,
+        pageIndicatorActive: .accentColor,
+        pageIndicatorInactive: .secondary.opacity(0.4),
+        textSecondary: .secondary,
+        onGoToPage: { _ in }
+    )
+    .padding()
+    .frame(width: 480)
+    .background(LaunchpadBackdrop())
+}

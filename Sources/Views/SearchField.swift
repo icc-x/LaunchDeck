@@ -38,3 +38,21 @@ struct SearchField: View {
         )
     }
 }
+
+#Preview("SearchField empty") {
+    StatefulPreviewWrapper("") { binding in
+        SearchField(text: binding)
+            .frame(width: 380)
+            .padding()
+            .background(LaunchpadBackdrop())
+    }
+}
+
+#Preview("SearchField with text") {
+    StatefulPreviewWrapper("calculator") { binding in
+        SearchField(text: binding)
+            .frame(width: 380)
+            .padding()
+            .background(LaunchpadBackdrop())
+    }
+}

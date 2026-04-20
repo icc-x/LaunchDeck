@@ -31,3 +31,15 @@ struct LaunchpadBackdrop: View {
         .ignoresSafeArea()
     }
 }
+
+#Preview("Light") {
+    LaunchpadBackdrop()
+        .frame(width: 640, height: 400)
+        .preferredColorScheme(.light)
+}
+
+#Preview("Dark") {
+    LaunchpadBackdrop()
+        .frame(width: 640, height: 400)
+        .preferredColorScheme(.dark)
+}

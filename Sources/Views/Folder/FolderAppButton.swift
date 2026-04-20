@@ -130,3 +130,21 @@ struct FolderAppPlaceholderView: View {
             .transition(.scale(scale: 0.94).combined(with: .opacity))
     }
 }
+
+#Preview("Folder app button") {
+    FolderAppButton(
+        app: LaunchDeckPreviewFixtures.safari,
+        isBeingDragged: false,
+        iconProvider: AppIconProvider(),
+        action: {},
+        onBeginDragging: {}
+    )
+    .padding(24)
+    .background(LaunchpadBackdrop())
+}
+
+#Preview("Folder app placeholder") {
+    FolderAppPlaceholderView()
+        .padding(24)
+        .background(LaunchpadBackdrop())
+}

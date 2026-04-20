@@ -23,6 +23,22 @@
 - 中英文本地化资源与资源 bundle 打包
 - 本地检查脚本与 GitHub Actions CI
 
+## 系统要求
+
+- **macOS 26 (Tahoe) 及以上**
+- Xcode 17 / Swift 6.2 工具链
+
+### 为什么坚持 macOS 26？
+
+本项目 `Package.swift` 将 deployment target 固定为 `.macOS(.v26)`，**不向下兼容**。这是一项明确的工程决策，不是疏忽：
+
+- **`.onDrag { … } preview: { … }` 的高保真拖拽预览**需要 v26 上最新的 SwiftUI drag/drop 管线，旧系统的降级路径会丢失 `.compositingGroup()` + `matchedGeometryEffect` 的视觉连续性。
+- **`accessibilityReduceMotion` 与 `NSWorkspace.accessibilityDisplayShouldReduceMotion` 的语义**在 v26 上才与动画调度器完美对齐，低版本会出现 reduce-motion 状态延迟一帧的问题。
+- **`Task.sleep(nanoseconds:)` 的调度精度**、`@MainActor` 隔离的诊断、以及 `os.Logger` 的 structured metadata 在 v26 工具链下才是"零成本"抽象。
+- 项目定位为个人启动台，没有向企业旧设备分发的需求；与其花精力维护多条兼容路径，不如把表达力预算花在 UX 细节上。
+
+如果需要在更低版本上运行，请 fork 后自行替换相关 API——我们不会接受 "降低 deployment target" 的 PR。
+
 ## 运行
 
 ```bash
